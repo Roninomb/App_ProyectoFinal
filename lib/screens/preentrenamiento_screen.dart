@@ -36,10 +36,8 @@ class PreTrainScreen extends StatelessWidget {
                 context.pushNamed('entrenamiento', extra: {
                   'nombre': nombre,
                   'email': email,
-                  'fuerza': 42.5,
-                  'pulsos': 110,
-                  'ritmo': true,
                 });
+              },
               child: const Text('Iniciar entrenamiento'),
             ),
             const Spacer(),

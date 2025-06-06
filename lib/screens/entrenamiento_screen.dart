@@ -20,7 +20,7 @@ class EntrenamientoScreen extends StatefulWidget {
 
 class _EntrenamientoScreenState extends State<EntrenamientoScreen> {
   late Timer _timer;
-  int _segundosRestantes = 10;
+  int _segundosRestantes = 15;
 
   final Random _random = Random();
   double _fuerzaTotal = 0;
