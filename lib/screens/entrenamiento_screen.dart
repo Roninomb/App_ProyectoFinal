@@ -1,4 +1,6 @@
+// lib/screens/entrenamiento_screen.dart
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -45,9 +47,14 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
   }
 
   void _finalizarEntrenamiento() {
-    ref.read(fuerzaProvider.notifier).state = 42.5;
-    ref.read(pulsosProvider.notifier).state = 110;
-    ref.read(ritmoProvider.notifier).state = true;
+    final random = Random();
+    final fuerza = 70 + random.nextInt(31); // 70–100%
+    final pulsos = 70 + random.nextInt(31); // 70–100%
+    final ritmoCorrecto = random.nextBool();
+
+    ref.read(fuerzaProvider.notifier).state = fuerza.toDouble();
+    ref.read(pulsosProvider.notifier).state = pulsos;
+    ref.read(ritmoProvider.notifier).state = ritmoCorrecto;
 
     context.pushNamed('resultado');
   }
