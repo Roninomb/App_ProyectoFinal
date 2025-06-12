@@ -8,54 +8,70 @@ class ResultadoScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // ignore: unused_local_variable
     final nombre = ref.watch(nombreProvider);
-    final email = ref.watch(emailProvider);
+    ref.watch(emailProvider);
     final fuerza = ref.watch(fuerzaProvider);
     final pulsos = ref.watch(pulsosProvider);
     final ritmo = ref.watch(ritmoProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Resultados')),
+      appBar: AppBar(title: const Text('Resumen del entrenamiento')),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('✅ Entrenamiento completado', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 16),
-            Text('👤 Nombre: $nombre'),
-            Text('📧 Email: $email'),
-            const Divider(height: 32),
-            Text('📊 Resultados:', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text('💪 Fuerza promedio: ${fuerza.toStringAsFixed(2)} N'),
-            Text('❤️ Pulsos promedio: $pulsos bpm'),
-            Text('🧠 Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
+            const Text(
+              'Resumen del entrenamiento',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 32),
-            Center(
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.email_outlined),
-                label: const Text('Enviar reporte por email'),
-                onPressed: () async {
-                  try {
-                    await enviarReportePorEmail(
-                      nombre: nombre,
-                      email: email,
-                      fuerza: fuerza,
-                      pulsos: pulsos,
-                      ritmo: ritmo,
-                    );
+            Card(
+              elevation: 4,
+              child: ListTile(
+                title: const Text('Fuerza promedio'),
+                subtitle: Text('${fuerza.toStringAsFixed(1)} N'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 4,
+              child: ListTile(
+                title: const Text('Pulsos por minuto'),
+                subtitle: Text('$pulsos bpm'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 4,
+              child: ListTile(
+                title: const Text('Ritmo'),
+                subtitle: Text(ritmo ? 'Correcto' : 'Incorrecto'),
+              ),
+            ),
+            const Spacer(),
+            ElevatedButton.icon(
+              onPressed: () async {
+                try {
+                  await enviarReportePorEmail(ref);
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('📨 Reporte enviado por email')),
+                      const SnackBar(content: Text('📩 Reporte enviado exitosamente')),
                     );
-                  } catch (e) {
+                  }
+                } catch (e) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('❌ Error al enviar: $e')),
                     );
                   }
-                },
-              ),
-            )
+                }
+              },
+              icon: const Icon(Icons.send),
+              label: const Text('Enviar reporte por correo'),
+            ),
           ],
         ),
       ),

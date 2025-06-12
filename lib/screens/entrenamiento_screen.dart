@@ -1,39 +1,85 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/user_provider.dart';
 
-class PreEntrenamientoScreen extends ConsumerWidget {
-  const PreEntrenamientoScreen({super.key});
+class EntrenamientoScreen extends ConsumerStatefulWidget {
+  const EntrenamientoScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nombre = ref.watch(nombreProvider);
-    
+  ConsumerState<EntrenamientoScreen> createState() => _EntrenamientoScreenState();
+}
 
+class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
+  static const int duracionEntrenamiento = 10; // segundos
+  late Timer _timer;
+  int segundosRestantes = duracionEntrenamiento;
+  bool entrenamientoFinalizado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _iniciarTimer();
+  }
+
+  void _iniciarTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (segundosRestantes == 1) {
+        setState(() {
+          entrenamientoFinalizado = true;
+          _timer.cancel();
+        });
+      } else {
+        setState(() {
+          segundosRestantes--;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  void _finalizarEntrenamiento() {
+    ref.read(fuerzaProvider.notifier).state = 42.5;
+    ref.read(pulsosProvider.notifier).state = 110;
+    ref.read(ritmoProvider.notifier).state = true;
+
+    context.pushNamed('resultado');
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrenamiento')),
+      appBar: AppBar(title: const Text('Entrenamiento activo')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '¡Hola, $nombre!',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
             const Text(
-              'Coloque ambas manos sobre el tórax y presione con ritmo.',
+              'Entrenamiento en curso...',
               textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 20),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
+            Center(
+              child: Text(
+                '$segundosRestantes s',
+                style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Spacer(),
             ElevatedButton(
-              onPressed: () {
-                context.pushNamed('entrenamiento');
-              },
-              child: const Text('Iniciar entrenamiento'),
+              onPressed: entrenamientoFinalizado ? _finalizarEntrenamiento : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: entrenamientoFinalizado ? Colors.red : Colors.grey,
+              ),
+              child: const Text('Finalizar entrenamiento'),
             ),
           ],
         ),
