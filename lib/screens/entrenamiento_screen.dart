@@ -1,87 +1,41 @@
-import 'dart:async';
-import 'dart:math';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/user_provider.dart';
 
-class EntrenamientoScreen extends StatefulWidget {
-  final String nombre;
-  final String email;
-
-  const EntrenamientoScreen({
-    super.key,
-    required this.nombre,
-    required this.email,
-  });
+class PreEntrenamientoScreen extends ConsumerWidget {
+  const PreEntrenamientoScreen({super.key});
 
   @override
-  State<EntrenamientoScreen> createState() => _EntrenamientoScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nombre = ref.watch(nombreProvider);
+    
 
-class _EntrenamientoScreenState extends State<EntrenamientoScreen> {
-  late Timer _timer;
-  int _segundosRestantes = 15;
-
-  final Random _random = Random();
-  double _fuerzaTotal = 0;
-  int _pulsosTotal = 0;
-  int _mediciones = 0;
-  int _ritmoCorrectoCount = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _iniciarEntrenamiento();
-  }
-
-  void _iniciarEntrenamiento() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _segundosRestantes--;
-      });
-
-      
-      final nuevaFuerza = 30 + _random.nextDouble() * 70;
-      final nuevosPulsos = 80 + _random.nextInt(40);
-      final ritmoCorrecto = _random.nextBool();
-
-      _fuerzaTotal += nuevaFuerza;
-      _pulsosTotal += nuevosPulsos;
-      _mediciones += 1;
-      if (ritmoCorrecto) _ritmoCorrectoCount++;
-
-      if (_segundosRestantes <= 0) {
-        _timer.cancel();
-
-        final promedioFuerza = _fuerzaTotal / _mediciones;
-        final promedioPulsos = _pulsosTotal ~/ _mediciones;
-        final ritmo = _ritmoCorrectoCount > _mediciones / 2;
-
-        context.goNamed('resultado', extra: {
-          'nombre': widget.nombre,
-          'email': widget.email,
-          'fuerza': promedioFuerza,
-          'pulsos': promedioPulsos,
-          'ritmo': ritmo,
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrenando...')),
-      body: Center(
-        child: Text(
-          'Tiempo restante: $_segundosRestantes s',
-          style: const TextStyle(fontSize: 32),
+      appBar: AppBar(title: const Text('Entrenamiento')),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '¡Hola, $nombre!',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Coloque ambas manos sobre el tórax y presione con ritmo.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: () {
+                context.pushNamed('entrenamiento');
+              },
+              child: const Text('Iniciar entrenamiento'),
+            ),
+          ],
         ),
       ),
     );

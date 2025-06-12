@@ -1,58 +1,48 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/user_provider.dart';
 
-class PreTrainScreen extends StatelessWidget {
-  final String nombre;
-  final String email;
-
-  const PreTrainScreen({
-    super.key,
-    required this.nombre,
-    required this.email,
-  });
+class HomeScreen extends ConsumerWidget {
+  const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nombre = ref.watch(nombreProvider);
+    final email = ref.watch(emailProvider);
+
+    final camposValidos = nombre.trim().isNotEmpty && email.trim().isNotEmpty;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrenamiento')),
+      appBar: AppBar(title: const Text('Inicio')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '¡Hola, $nombre!',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
             const Text(
-              'Coloque ambas manos sobre el torax y presione con ritmo.',
+              'Bienvenido a la app de RCP',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () {
-                context.pushNamed('entrenamiento', extra: {
-                  'nombre': nombre,
-                  'email': email,
-                });
-              },
-              child: const Text('Iniciar entrenamiento'),
+            TextField(
+              decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder()),
+              onChanged: (value) => ref.read(nombreProvider.notifier).state = value,
             ),
-            const Spacer(),
+            const SizedBox(height: 16),
+            TextField(
+              decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
+              keyboardType: TextInputType.emailAddress,
+              onChanged: (value) => ref.read(emailProvider.notifier).state = value,
+            ),
+            const SizedBox(height: 24),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () {
-                context.pushNamed('resultado', extra: {
-                  'nombre': nombre,
-                  'email': email,
-                  'fuerza': 42.5,
-                  'pulsos': 110,
-                  'ritmo': true,
-                });
-              },
-              child: const Text('Finalizar'),
+              onPressed: camposValidos
+                  ? () => context.pushNamed('pretrain')
+                  : null,
+              child: const Text('Comenzar entrenamiento'),
             ),
           ],
         ),
