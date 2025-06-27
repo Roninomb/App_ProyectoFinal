@@ -14,7 +14,7 @@ class EntrenamientoScreen extends ConsumerStatefulWidget {
 }
 
 class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
-  static const int duracionEntrenamiento = 10; // segundos
+  static const int duracionEntrenamiento = 15; // segundos
   late Timer _timer;
   int segundosRestantes = duracionEntrenamiento;
   bool entrenamientoFinalizado = false;
@@ -27,7 +27,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
 
   void _iniciarTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (segundosRestantes == 1) {
+      if (segundosRestantes == 0) {
         setState(() {
           entrenamientoFinalizado = true;
           _timer.cancel();
