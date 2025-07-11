@@ -1,4 +1,3 @@
-// lib/screens/entrenamiento_screen.dart
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -10,83 +9,75 @@ class EntrenamientoScreen extends ConsumerStatefulWidget {
   const EntrenamientoScreen({super.key});
 
   @override
-  ConsumerState<EntrenamientoScreen> createState() => _EntrenamientoScreenState();
+  ConsumerState<EntrenamientoScreen> createState() =>
+      _EntrenamientoScreenState();
 }
 
 class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
-  static const int duracionEntrenamiento = 15; // segundos
-  late Timer _timer;
-  int segundosRestantes = duracionEntrenamiento;
-  bool entrenamientoFinalizado = false;
+  static const int duracion = 15;
+  int segundosRestantes = duracion;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    _iniciarTimer();
+    _iniciarEntrenamiento();
   }
 
-  void _iniciarTimer() {
+  void _iniciarEntrenamiento() {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (segundosRestantes == 0) {
-        setState(() {
-          entrenamientoFinalizado = true;
-          _timer.cancel();
-        });
-      } else {
+      if (segundosRestantes > 0) {
         setState(() {
           segundosRestantes--;
         });
+      } else {
+        timer.cancel();
+        _finalizarEntrenamiento();
       }
     });
   }
 
-  @override
-  void dispose() {
-    _timer.cancel();
-    super.dispose();
-  }
-
   void _finalizarEntrenamiento() {
     final random = Random();
-    final fuerza = 70 + random.nextInt(31); // 70–100%
-    final pulsos = 70 + random.nextInt(31); // 70–100%
-    final ritmoCorrecto = random.nextBool();
+    final fuerza = 60 + random.nextInt(41);  // 60–100
+    final pulsos = 60 + random.nextInt(41);  // 60–100
+    final ritmo = random.nextBool();
+
+    print("🧪 Generado => fuerza: $fuerza, pulsos: $pulsos, ritmo: $ritmo");
 
     ref.read(fuerzaProvider.notifier).state = fuerza.toDouble();
     ref.read(pulsosProvider.notifier).state = pulsos;
-    ref.read(ritmoProvider.notifier).state = ritmoCorrecto;
+    ref.read(ritmoProvider.notifier).state = ritmo;
 
     context.pushNamed('resultado');
   }
 
   @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrenamiento activo')),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      appBar: AppBar(title: const Text('Entrenamiento en curso')),
+      body: Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'Entrenamiento en curso...',
-              textAlign: TextAlign.center,
+              'Presione con ritmo por 15 segundos...',
               style: TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            Center(
-              child: Text(
-                '$segundosRestantes s',
-                style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold),
+            Text(
+              '$segundosRestantes',
+              style: const TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
               ),
-            ),
-            const Spacer(),
-            ElevatedButton(
-              onPressed: entrenamientoFinalizado ? _finalizarEntrenamiento : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: entrenamientoFinalizado ? Colors.red : Colors.grey,
-              ),
-              child: const Text('Finalizar entrenamiento'),
             ),
           ],
         ),

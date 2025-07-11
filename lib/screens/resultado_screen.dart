@@ -15,9 +15,9 @@ class ResultadoScreen extends ConsumerWidget {
     final ritmo = ref.watch(ritmoProvider);
 
     Future<void> enviarEmail() async {
-      if (email.trim().isEmpty) {
+      if (email.trim().isEmpty || nombre.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('El email está vacío.')),
+          const SnackBar(content: Text('El nombre o el email están vacíos.')),
         );
         return;
       }
@@ -31,11 +31,11 @@ class ResultadoScreen extends ConsumerWidget {
           ritmo: ritmo,
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reporte enviado correctamente')),
+          const SnackBar(content: Text('📩 Reporte enviado correctamente')),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al enviar email: $e')),
+          SnackBar(content: Text('❌ Error al enviar email: $e')),
         );
       }
     }
@@ -49,13 +49,13 @@ class ResultadoScreen extends ConsumerWidget {
           children: [
             Text(
               '¡Buen trabajo, $nombre!',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
             Text('💪 Fuerza efectiva: ${fuerza.toStringAsFixed(1)} %'),
             Text('❤️ Pulsos efectivos: $pulsos %'),
-            Text('Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
+            Text('🕒 Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
             const SizedBox(height: 32),
             ElevatedButton.icon(
               onPressed: enviarEmail,
