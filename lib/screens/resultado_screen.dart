@@ -41,28 +41,62 @@ class ResultadoScreen extends ConsumerWidget {
     }
 
     return Scaffold(
+      backgroundColor: const Color(0xFFEAF7FE), // fondo celeste claro
       appBar: AppBar(title: const Text('Resultado del entrenamiento')),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '¡Buen trabajo, $nombre!',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            Text('💪 Fuerza efectiva: ${fuerza.toStringAsFixed(1)} %'),
-            Text('❤️ Pulsos efectivos: $pulsos %'),
-            Text('🕒 Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: enviarEmail,
-              icon: const Icon(Icons.email),
-              label: const Text('Enviar reporte por email'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '¡Buen trabajo, $nombre!',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text('💪 Fuerza efectiva: ${fuerza.toStringAsFixed(1)} %'),
+                Text('❤️ Pulsos efectivos: $pulsos %'),
+                Text('🕒 Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
+                const SizedBox(height: 32),
+                ElevatedButton.icon(
+                  onPressed: enviarEmail,
+                  icon: const Icon(Icons.email),
+                  label: const Text('Enviar reporte por email'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF26464),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
