@@ -60,6 +60,7 @@ class ResultadoScreen extends ConsumerWidget {
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
+                    fontFamily: "inter",
                   ),
                 ),
                 const SizedBox(height: 24),
