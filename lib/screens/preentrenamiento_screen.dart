@@ -93,17 +93,8 @@ class _PreEntrenamientoScreenState
                     color: Color(0xFF1C2E45),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Coloque ambas manos sobre el tórax y presione con ritmo.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 38),
+              
 
                 if (estado == BLEStatus.connecting)
                   const Column(

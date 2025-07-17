@@ -28,14 +28,12 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500), // 120 BPM = 500ms
+      duration: const Duration(milliseconds: 500),
     )..repeat(reverse: true);
 
-    _scaleAnimation =
-        Tween<double>(begin: 1.0, end: 1.2).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.8).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
   }
 
   void _iniciarEntrenamiento() {
@@ -57,8 +55,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     final pulsos = 60 + random.nextInt(41); // 60–100
     final ritmo = random.nextBool();
 
-    print("🧪 Generado => fuerza: $fuerza, pulsos: $pulsos, ritmo: $ritmo");
-
     ref.read(fuerzaProvider.notifier).state = fuerza.toDouble();
     ref.read(pulsosProvider.notifier).state = pulsos;
     ref.read(ritmoProvider.notifier).state = ritmo;
@@ -79,48 +75,50 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       backgroundColor: const Color(0xFFFFF5FA),
       appBar: AppBar(title: const Text('Entrenamiento en curso')),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Presione con ritmo por 15 segundos...',
-              style: TextStyle(fontSize: 20),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.pinkAccent.withAlpha((255 * 0.2).round()),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color:
-                              Colors.pinkAccent.withAlpha((255 * 0.4).round()),
-                          blurRadius: 30,
-                          spreadRadius: 15,
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 32),
-            Text(
-              '$segundosRestantes',
-              style: const TextStyle(
-                fontSize: 48,
-                fontWeight: FontWeight.bold,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Presione con ritmo por 15 segundos...',
+                style: TextStyle(fontSize: 20),
+                textAlign: TextAlign.center,
               ),
-            ),
-          ],
+              const SizedBox(height: 60),
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _scaleAnimation.value,
+                    child: Container(
+                      width: 160,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        color: Colors.pinkAccent.withAlpha((0.15 * 255).round()),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.pinkAccent.withAlpha(60),
+                            blurRadius: 50,
+                            spreadRadius: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 40),
+              Text(
+                '$segundosRestantes',
+                style: const TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
