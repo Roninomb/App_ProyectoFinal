@@ -15,7 +15,7 @@ class HomeScreen extends ConsumerWidget {
         nombre.trim().isNotEmpty && email.trim().isNotEmpty;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFEAF7FE), // celeste claro
+      backgroundColor: const Color(0xFFEAF7FE), 
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),

@@ -42,7 +42,10 @@ class ResultadoScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Colors.blue[50],
-      appBar: AppBar(title: const Text('Resultado del entrenamiento')),
+      appBar: AppBar(
+          centerTitle: true,
+          title: const Text('Resultado del entrenamiento',
+              style: TextStyle(fontWeight: FontWeight.bold))),
       body: Center(
         child: Card(
           margin: const EdgeInsets.all(24),

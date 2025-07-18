@@ -73,7 +73,19 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5FA),
-      appBar: AppBar(title: const Text('Entrenamiento en curso')),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text(
+          'Entrenamiento en curso',
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1C2E45),
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
