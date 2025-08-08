@@ -421,3 +421,125 @@ class _WebBleTextAppState extends State<WebBleTextApp> {
     );
   }
 }
+
+
+
+
+
+
+
+
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+#define SERVICE_UUID        "73cfa67c-c85a-45ae-af51-329641b8f315"
+#define CHAR_TEXT_UUID      "ded8cb86-dd30-4f11-b39c-68f15f2a2f90"
+
+const int botonPin = 32;   // Pin del botón para medir ritmo
+const int sensorPin = 34;  // Pin del sensor para medir fuerza
+
+BLEServer* pServer = nullptr;
+BLECharacteristic* pTextChar = nullptr;
+BLE2902* pTextCccd = nullptr;
+
+volatile bool deviceConnected = false;
+
+int estadoBotonActual = HIGH;
+int estadoBotonAnterior = HIGH;
+
+unsigned long tiempoAnterior = 0;
+unsigned long ultimoCambio = 0;
+
+const unsigned long intervaloMin = 400;  // ms, para ritmo correcto (100-150 bpm aprox)
+const unsigned long intervaloMax = 700;
+const unsigned long debounceDelay = 50;
+
+int contador = 0;          // Compresiones válidas
+int ritmoCorrecto = 0;     // Pulsos en ritmo correcto
+
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* s) override {
+    deviceConnected = true;
+    Serial.println("[BLE] Central conectado");
+  }
+  void onDisconnect(BLEServer* s) override {
+    deviceConnected = false;
+    Serial.println("[BLE] Central desconectado");
+    s->getAdvertising()->start();
+  }
+};
+
+void setup() {
+  pinMode(botonPin, INPUT_PULLUP);
+  pinMode(sensorPin, INPUT);
+  Serial.begin(115200);
+
+  BLEDevice::init("NeoRCP");
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  BLEService* pService = pServer->createService(SERVICE_UUID);
+
+  pTextChar = pService->createCharacteristic(
+    CHAR_TEXT_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
+  );
+
+  pTextCccd = new BLE2902();
+  pTextCccd->setNotifications(false);
+  pTextChar->addDescriptor(pTextCccd);
+
+  pService->start();
+
+  BLEAdvertising* pAdv = BLEDevice::getAdvertising();
+  pAdv->addServiceUUID(SERVICE_UUID);
+  pAdv->setScanResponse(true);
+  pAdv->setMinPreferred(0x06);
+  pAdv->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("[BLE] Listo. Anunciando servicio...");
+}
+
+void loop() {
+  estadoBotonActual = digitalRead(botonPin);
+  unsigned long tiempoAhora = millis();
+
+  // Detectar flanco de bajada y debounce
+  if (estadoBotonAnterior == HIGH && estadoBotonActual == LOW && (tiempoAhora - ultimoCambio) > debounceDelay) {
+    ultimoCambio = tiempoAhora;
+
+    unsigned long intervalo = tiempoAhora - tiempoAnterior;
+
+    if (intervalo >= intervaloMin && intervalo <= intervaloMax) {
+      contador++;
+      ritmoCorrecto++;
+      Serial.print("✅ Pulso válido #");
+      Serial.print(contador);
+      Serial.print(" - Intervalo: ");
+      Serial.print(intervalo);
+      Serial.println(" ms");
+    } else {
+      Serial.print("⚠️ Pulso fuera de ritmo - Intervalo: ");
+      Serial.print(intervalo);
+      Serial.println(" ms");
+    }
+
+    tiempoAnterior = tiempoAhora;
+
+    // Leer sensor y enviar por BLE si está conectado y notificaciones activadas
+    if (deviceConnected && pTextCccd->getNotifications()) {
+      bool sensorState = digitalRead(sensorPin);
+      String mensaje = "Sensor: ";
+      mensaje += (sensorState == LOW) ? "false\n" : "true\n";  // LOW = detectado
+      pTextChar->setValue((uint8_t*)mensaje.c_str(), mensaje.length());
+      pTextChar->notify();
+      Serial.print("[BLE] TX: ");
+      Serial.print(mensaje);
+    }
+  }
+
+  estadoBotonAnterior = estadoBotonActual;
+}
