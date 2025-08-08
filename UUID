@@ -543,3 +543,254 @@ void loop() {
 
   estadoBotonAnterior = estadoBotonActual;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+// lib/main.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+
+void main() {
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebBleRitmoApp()));
+}
+
+/// Punto del gráfico: índice y si el ritmo fue OK.
+class RhythmPoint {
+  final int x;
+  final bool ok;
+  RhythmPoint(this.x, this.ok);
+}
+
+class WebBleRitmoApp extends StatefulWidget {
+  const WebBleRitmoApp({super.key});
+  @override
+  State<WebBleRitmoApp> createState() => _WebBleRitmoAppState();
+}
+
+class _WebBleRitmoAppState extends State<WebBleRitmoApp> {
+  // ==== UUIDs (los mismos que en tu ESP32) ====
+  static const String kServiceUuid        = "73cfa67c-c85a-45ae-af51-329641b8f315";
+  static const String kCharTextNotifyUuid = "ded8cb86-dd30-4f11-b39c-68f15f2a2f90";
+  // =============================================
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _notifyChar;
+
+  bool _connected = false;
+  String _status = "Sin conexión";
+
+  // Consola de líneas crudas
+  final List<String> _lines = [];
+  String _buffer = "";
+
+  // Datos para el chart (últimos N puntos)
+  final List<RhythmPoint> _chart = [];
+  static const int _maxPoints = 50;
+
+  // ---------- BLE ----------
+  Future<List<BluetoothService>> _waitAndDiscover(BluetoothDevice device,
+      {Duration timeout = const Duration(seconds: 8)}) async {
+    final start = DateTime.now();
+    while (true) {
+      try {
+        return await device.discoverServices();
+      } catch (_) {
+        if (DateTime.now().difference(start) > timeout) rethrow;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    }
+  }
+
+  Future<void> _pickAndConnect() async {
+    try {
+      setState(() => _status = "Solicitando dispositivo...");
+
+      final options = RequestOptionsBuilder.acceptAllDevices(
+        optionalServices: [kServiceUuid],
+      );
+      final device = await FlutterWebBluetooth.instance.requestDevice(options);
+
+      setState(() {
+        _device = device;
+        _status = "Conectando...";
+      });
+
+      // Conectar (API retorna void)
+      device.connect();
+
+      setState(() => _status = "Descubriendo servicio...");
+      final services = await _waitAndDiscover(device);
+
+      // (Opcional) loguear servicios encontrados:
+      // for (final s in services) debugPrint('Service: ${s.uuid}');
+
+      final service = services.firstWhere((s) => s.uuid == kServiceUuid);
+      final characteristic = await service.getCharacteristic(kCharTextNotifyUuid);
+
+      await characteristic.startNotifications();
+      characteristic.value.listen(_onValue, onError: (e) {
+        setState(() => _status = "Error en notificación: $e");
+      });
+
+      setState(() {
+        _notifyChar = characteristic;
+        _connected = true;
+        _status = "Conectado";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: $e";
+        _connected = false;
+      });
+    }
+  }
+
+  Future<void> _disconnect() async {
+    try {
+      await _notifyChar?.stopNotifications();
+    } catch (_) {}
+    try {
+      _device?.disconnect();
+    } catch (_) {}
+    setState(() {
+      _status = "Desconectado";
+      _notifyChar = null;
+      _device = null;
+      _lines.clear();
+      _buffer = "";
+      _chart.clear();
+      _connected = false;
+    });
+  }
+
+  // ---------- Recepción y parser ----------
+  void _onValue(ByteData data) {
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = utf8.decode(bytes, allowMalformed: true);
+
+    _buffer += part;
+    final parts = _buffer.split('\n');
+
+    if (parts.length > 1) {
+      setState(() {
+        for (int i = 0; i < parts.length - 1; i++) {
+          final line = _sanitize(parts[i]);
+          if (line.isEmpty) continue;
+          _lines.add(line);
+          _processRitmo(line); // agrega barra verde/roja
+        }
+      });
+    }
+    _buffer = parts.last; // puede quedar parcial
+  }
+
+  String _sanitize(String s) => s.replaceAll('\r', '');
+
+  /// Interpreta líneas del ESP32:
+  ///   "RITMO=1" => OK (verde)
+  ///   "RITMO=0" => BAD (rojo)
+  ///   (soporta "RITMO:1/0" también)
+  void _processRitmo(String line) {
+    final L = line.trim().toUpperCase();
+
+    // Aceptamos RITMO=1/0 o RITMO:1/0
+    final m = RegExp(r'RITMO[:=]\s*([01])').firstMatch(L);
+    if (m == null) return;
+
+    final ok = m.group(1) == '1';
+
+    _chart.add(RhythmPoint(_chart.length, ok));
+    if (_chart.length > _maxPoints) {
+      _chart.removeAt(0);
+      // reindex simple para eje X 0..N
+      for (int i = 0; i < _chart.length; i++) {
+        _chart[i] = RhythmPoint(i, _chart[i].ok);
+      }
+    }
+  }
+
+  // ---------- UI ----------
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_connected ? "Conectado" : "BLE Web (Ritmo)"),
+        actions: [
+          if (!_connected)
+            TextButton(
+              onPressed: _pickAndConnect,
+              child: const Text("Conectar", style: TextStyle(color: Colors.white)),
+            ),
+          if (_connected)
+            TextButton(
+              onPressed: _disconnect,
+              child: const Text("Desconectar", style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text(_status),
+            subtitle: Text(_device?.name ?? "(sin nombre)"),
+            trailing: Text(_device?.id ?? ""),
+          ),
+          const Divider(height: 1),
+          // ---- Chart de barras OK/NO OK ----
+          SizedBox(
+            height: 220,
+            child: SfCartesianChart(
+              title: const ChartTitle(text: 'Ritmo: correcto (verde) / incorrecto (rojo)'),
+              primaryXAxis: NumericAxis(
+                title: const AxisTitle(text: 'Ritmo'),
+                majorGridLines: const MajorGridLines(width: 0.2),
+              ),
+              primaryYAxis: NumericAxis(
+                minimum: -1.2,
+                maximum:  1.2,
+                interval: 1,
+                isVisible: false, // solo interesa color
+              ),
+              series: <CartesianSeries<RhythmPoint, int>>[
+                ColumnSeries<RhythmPoint, int>(
+                  dataSource: _chart,
+                  xValueMapper: (p, _) => p.x,
+                  yValueMapper: (p, _) => p.ok ? 1 : -1,
+                  pointColorMapper: (p, _) => p.ok ? Colors.green : Colors.red,
+                  borderRadius: const BorderRadius.all(Radius.circular(14)),
+                  width: 0.9,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // ---- Consola de texto recibido ----
+          Expanded(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) => ListTile(
+                dense: true,
+                title: Text(_lines[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
