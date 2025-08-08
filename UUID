@@ -1,0 +1,6 @@
+#define SERVICE_UUID        "73cfa67c-c85a-45ae-af51-329641b8f315"
+#define CHARACTERISTIC_UUID "ded8cb86-dd30-4f11-b39c-68f15f2a2f90"
+
+
+
+BLEDevice::init("NeoRCP");
