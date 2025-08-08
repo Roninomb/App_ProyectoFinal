@@ -104,3 +104,167 @@ void loop() {
 
   // No bloquees el loop; BLE corre en background
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// lib/main.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+
+void main() {
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebBleTextApp()));
+}
+
+class WebBleTextApp extends StatefulWidget {
+  const WebBleTextApp({super.key});
+  @override
+  State<WebBleTextApp> createState() => _WebBleTextAppState();
+}
+
+class _WebBleTextAppState extends State<WebBleTextApp> {
+  // ==== TUS UUIDS (128-bit) ====
+  static const String kServiceUuid        = "73cfa67c-c85a-45ae-af51-329641b8f315";
+  static const String kCharTextNotifyUuid = "ded8cb86-dd30-4f11-b39c-68f15f2a2f90";
+  // ==============================
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _notifyChar;
+
+  bool _connected = false;
+  String _status = "Sin conexión";
+  final List<String> _lines = [];
+  String _buffer = "";
+
+  Future<void> _pickAndConnect() async {
+    try {
+      setState(() => _status = "Solicitando dispositivo...");
+
+      final options = RequestOptionsBuilder.acceptAllDevices(
+        optionalServices: [kServiceUuid],
+      );
+      final device = await FlutterWebBluetooth.instance.requestDevice(options);
+
+      setState(() {
+        _device = device;
+        _status = "Conectando...";
+      });
+
+      // Conectar (no await: retorna void en esta versión)
+      device.connect();
+
+      setState(() => _status = "Descubriendo servicio...");
+      final services = await device.discoverServices();
+      final service = services.firstWhere((s) => s.uuid == kServiceUuid);
+
+      final characteristic = await service.getCharacteristic(kCharTextNotifyUuid);
+
+      await characteristic.startNotifications();
+      characteristic.value.listen(_onValue, onError: (e) {
+        setState(() => _status = "Error en notificación: $e");
+      });
+
+      setState(() {
+        _notifyChar = characteristic;
+        _connected = true;
+        _status = "Conectado";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: $e";
+        _connected = false;
+      });
+    }
+  }
+
+  void _onValue(ByteData data) {
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = utf8.decode(bytes, allowMalformed: true);
+
+    _buffer += part;
+    final parts = _buffer.split('\n');
+
+    if (parts.length > 1) {
+      setState(() {
+        for (int i = 0; i < parts.length - 1; i++) {
+          _lines.add(piecesSafe(parts[i]));
+        }
+      });
+    }
+    _buffer = parts.last; // puede quedar parcial
+  }
+
+  // Evita renderizar caracteres de control raros
+  String piecesSafe(String s) => s.replaceAll('\r', '');
+
+  Future<void> _disconnect() async {
+    try {
+      await _notifyChar?.stopNotifications();
+    } catch (_) {}
+    try {
+      _device?.disconnect(); // retorna void
+    } catch (_) {}
+    setState(() {
+      _status = "Desconectado";
+      _notifyChar = null;
+      _device = null;
+      _lines.clear();
+      _buffer = "";
+      _connected = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_connected ? "Conectado" : "BLE Web (texto)"),
+        actions: [
+          if (!_connected)
+            TextButton(
+              onPressed: _pickAndConnect,
+              child: const Text("Conectar", style: TextStyle(color: Colors.white)),
+            ),
+          if (_connected)
+            TextButton(
+              onPressed: _disconnect,
+              child: const Text("Desconectar", style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text(_status),
+            subtitle: Text(_device?.name ?? "(sin nombre)"),
+            trailing: Text(_device?.id ?? ""),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) => ListTile(title: Text(_lines[i])),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
