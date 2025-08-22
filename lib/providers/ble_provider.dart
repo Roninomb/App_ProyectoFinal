@@ -122,6 +122,10 @@ class BleController extends StateNotifier<BleState> {
 
     // 3) escaneo con timeout real
     state = state.copyWith(scanning: true);
+
+
+    await Future.delayed(const Duration(seconds: 2));
+
     final found = Completer<void>();
 
     _scanSub = _ble.scanForDevices(withServices: [_serviceUuid]).listen(
