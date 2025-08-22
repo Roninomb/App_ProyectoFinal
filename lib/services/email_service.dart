@@ -4,9 +4,9 @@ import 'dart:convert';
 Future<void> enviarReportePorEmail({
   required String nombre,
   required String email,
-  required double fuerza,
-  required int pulsos,
-  required bool ritmo,
+  required String fuerza,
+  required String pulsos,
+  required String ritmo,
 }) async {
   const serviceId = 'service_5unht7r';
   const templateId = 'template_9gra318';
@@ -26,9 +26,9 @@ Future<void> enviarReportePorEmail({
       'template_params': {
         'email': email,
         'nombre': nombre,
-        'fuerza': fuerza.toStringAsFixed(2),
-        'pulsos': pulsos.toString(),
-        'ritmo': ritmo ? 'Correcto' : 'Incorrecto',
+        'fuerza': fuerza,
+        'pulsos': pulsos,
+        'ritmo': ritmo,
       }
     }),
   );

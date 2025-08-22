@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/user_provider.dart';
+import '../providers/training_provider.dart'; // Importa el provider central
 import '../services/email_service.dart';
 
 class ResultadoScreen extends ConsumerWidget {
@@ -10,12 +11,9 @@ class ResultadoScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nombre = ref.watch(nombreProvider);
     final email = ref.watch(emailProvider);
-    final fuerza = ref.watch(fuerzaProvider);
-    final pulsos = ref.watch(pulsosProvider);
-    final ritmo = ref.watch(ritmoProvider);
+    final training = ref.watch(trainingProvider); // Usa el provider central
 
     Future<void> enviarEmail() async {
-      // Validación previa (sin await → seguro usar context)
       if (email.trim().isEmpty || nombre.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('El nombre o el email están vacíos.')),
@@ -27,12 +25,11 @@ class ResultadoScreen extends ConsumerWidget {
         await enviarReportePorEmail(
           nombre: nombre,
           email: email,
-          fuerza: fuerza,
-          pulsos: pulsos,
-          ritmo: ritmo,
+          fuerza: training.fuerza?.toString() ?? '',
+          pulsos: training.pulsos?.toString() ?? '',
+          ritmo: training.ritmo?.toString() ?? '',
         );
 
-        // ⚠️ Después del await: chequear que el widget siga montado
         if (!context.mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -81,11 +78,11 @@ class ResultadoScreen extends ConsumerWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('💪 Fuerza efectiva: ${fuerza.toStringAsFixed(1)} %'),
+                    Text('💪 Fuerza efectiva: ${training.fuerza ?? '-'} %'),
                     const SizedBox(height: 8),
-                    Text('❤️ Pulsos efectivos: $pulsos %'),
+                    Text('❤️ Pulsos efectivos: ${training.pulsos ?? '-'} %'),
                     const SizedBox(height: 8),
-                    Text('🕒 Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
+                    Text('🕒 Ritmo: ${training.ritmo ?? '-'}'),
                   ],
                 ),
 
