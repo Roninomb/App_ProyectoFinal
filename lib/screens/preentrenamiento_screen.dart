@@ -1,60 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/ble_provider.dart';
+import '../providers/user_provider.dart';
 
 class PreEntrenamientoScreen extends ConsumerWidget {
   const PreEntrenamientoScreen({super.key});
 
   static const _bgColor = Color(0xFFEFF7FD);
-  static const _ctaColor = Color(0xFFF26161);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ble = ref.watch(bleProvider);
-    final bleCtrl = ref.read(bleProvider.notifier); // <- NOTIFIER (controlador)
+    final bleCtrl = ref.read(bleProvider.notifier);
+    final nombre = ref.watch(nombreProvider);
 
-    Future<void> connectBle() async {
-      await bleCtrl.scanAndConnect(
-        scanTimeout: const Duration(seconds: 10),
-        connectTimeout: const Duration(seconds: 10),
-        namePrefix: "NeoRCP",
-      );
-      if (!context.mounted) return;
-
-      if (ref.read(bleProvider).connected) {
-        await bleCtrl.subscribeResult();
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('BLE listo')));
-      } else if (ble.error?.isNotEmpty ?? false) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error BLE: ${ble.error}')));
-      }
-    }
-
-    // 👉 Enviar START y navegar a /entrenamiento
-    Future<void> startTraining() async {
-      if (!ref.read(bleProvider).connected) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No hay conexión BLE')),
+    // Conexión automática al entrar en la pantalla
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!ble.connected && !ble.scanning && !ble.connecting) {
+        await bleCtrl.scanAndConnect(
+          scanTimeout: const Duration(seconds: 10),
+          connectTimeout: const Duration(seconds: 10),
+          namePrefix: "NeoRCP",
         );
-        return;
       }
-      await bleCtrl.startTraining();                 // <-- método del notifier
-      if (!context.mounted) return;                  // evita warning use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entrenamiento iniciado')),
-      );
-      Navigator.of(context).pushReplacementNamed('/entrenamiento');
-    }
-
-    final connected = ble.connected;
-    final busy = ble.scanning || ble.connecting;
-
-    final primaryLabel =
-        connected ? 'Comenzar entrenamiento' : 'Conectar por Bluetooth';
-    final Future<void> Function() primaryAction =
-        connected ? startTraining : connectBle;
+      // Cuando se conecta, navega directo a entrenamiento
+      // ignore: use_build_context_synchronously
+      if (ref.read(bleProvider).connected && ModalRoute.of(context)?.isCurrent == true) {
+        // ignore: use_build_context_synchronously
+        Navigator.pushReplacementNamed(context, '/entrenamiento');
+      }
+    });
 
     return Scaffold(
       backgroundColor: _bgColor,
@@ -66,6 +41,14 @@ class PreEntrenamientoScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Text(
+                  'Hola, $nombre',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 32),
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
                   decoration: BoxDecoration(
@@ -85,43 +68,28 @@ class PreEntrenamientoScreen extends ConsumerWidget {
                       Row(
                         children: [
                           Icon(
-                            connected
+                            ble.connected
                                 ? Icons.bluetooth_connected
                                 : Icons.bluetooth,
-                            color: connected ? Colors.teal : Colors.black45,
+                            color: ble.connected ? Colors.teal : Colors.black45,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              connected
+                              ble.connected
                                   ? 'Bluetooth listo'
-                                  : (ble.scanning
-                                      ? 'Buscando dispositivo…'
-                                      : (ble.connecting
-                                          ? 'Conectando…'
-                                          : 'Bluetooth listo')),
+                                  : 'Conectando…',
                               style: const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: (ble.scanning || ble.connecting)
-                                ? const _PulseDot(key: ValueKey('dot'))
-                                : const SizedBox(width: 16, key: ValueKey('nodot')),
-                          ),
+                          // La animación SIEMPRE visible
+                          const _PulseDot(),
                         ],
                       ),
-
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        child: (ble.scanning || ble.connecting)
-                            ? const Padding(
-                                padding: EdgeInsets.only(top: 12),
-                                child: LinearProgressIndicator(minHeight: 3),
-                              )
-                            : const SizedBox(height: 12),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: LinearProgressIndicator(minHeight: 3),
                       ),
-
                       if (ble.error?.isNotEmpty ?? false) ...[
                         const SizedBox(height: 10),
                         _Hint(
@@ -139,24 +107,7 @@ class PreEntrenamientoScreen extends ConsumerWidget {
                           icon: Icons.timer_off,
                         ),
                       ],
-
                       const SizedBox(height: 14),
-
-                      SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: busy ? null : primaryAction,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _ctaColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          child: Text(primaryLabel),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -169,8 +120,9 @@ class PreEntrenamientoScreen extends ConsumerWidget {
   }
 }
 
-/// Dot pulsante
+/// Dot pulsante SIEMPRE visible
 class _PulseDot extends StatefulWidget {
+  // ignore: unused_element_parameter
   const _PulseDot({super.key});
   @override
   State<_PulseDot> createState() => _PulseDotState();
@@ -233,9 +185,9 @@ class _Hint extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
+        color: color.withAlpha(15),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
+        border: Border.all(color: color.withAlpha(45)),
       ),
       child: Row(
         children: [
