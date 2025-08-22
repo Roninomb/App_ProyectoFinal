@@ -1,0 +1,1017 @@
+#define SERVICE_UUID        "73cfa67c-c85a-45ae-af51-329641b8f315"
+#define CHARACTERISTIC_UUID "ded8cb86-dd30-4f11-b39c-68f15f2a2f90"
+
+
+
+BLEDevice::init("NeoRCP");
+
+
+
+
+
+// ESP32 - Arduino IDE
+// Enviar texto por BLE (UTF-8) vía NOTIFY, líneas separadas por '\n'
+
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+// ==== UUIDs (deben coincidir con tu app Flutter Web) ====
+#define SERVICE_UUID        "12345678-1234-1234-1234-123456789abc"
+#define CHAR_TEXT_UUID      "87654321-4321-4321-4321-cba987654321"
+// =========================================================
+
+BLEServer* pServer = nullptr;
+BLECharacteristic* pTextChar = nullptr;
+BLE2902* pTextCccd = nullptr;
+
+volatile bool deviceConnected = false;
+
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* s) override {
+    deviceConnected = true;
+    // En Web Bluetooth, MTU lo maneja el browser; no hace falta cambiar nada acá
+    Serial.println("[BLE] Central conectado");
+  }
+  void onDisconnect(BLEServer* s) override {
+    deviceConnected = false;
+    Serial.println("[BLE] Central desconectado");
+    // Reanunciar para permitir reconexión
+    s->getAdvertising()->start();
+  }
+};
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+
+  // Nombre visible del dispositivo (el que vas a ver en el diálogo del navegador)
+  BLEDevice::init("NeoRCP");
+
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  // Servicio principal
+  BLEService* pService = pServer->createService(SERVICE_UUID);
+
+  // Característica de texto: NOTIFY (+READ opcional por si querés ver el último valor)
+  pTextChar = pService->createCharacteristic(
+    CHAR_TEXT_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
+  );
+
+  // Descriptor CCCD 0x2902 para habilitar notificaciones desde el cliente
+  pTextCccd = new BLE2902();
+  pTextCccd->setNotifications(false);  // arranca deshabilitado
+  pTextChar->addDescriptor(pTextCccd);
+
+  pService->start();
+
+  // Anunciar incluyendo el UUID del servicio (importante para que lo descubra el cliente)
+  BLEAdvertising* pAdv = BLEDevice::getAdvertising();
+  pAdv->addServiceUUID(SERVICE_UUID);
+  pAdv->setScanResponse(true);
+  pAdv->setMinPreferred(0x06);  // parámetros estándar
+  pAdv->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("[BLE] Listo. Anunciando servicio...");
+}
+
+void loop() {
+  static uint32_t t0 = 0;
+  const uint32_t PERIOD_MS = 500;
+
+  if (millis() - t0 >= PERIOD_MS) {
+    t0 = millis();
+
+    // Solo notificar si hay central conectada Y notificaciones habilitadas (CCCD)
+    // Nota: getNotifications() = true si el cliente habilitó notify en 0x2902
+    const bool subscribed = pTextCccd->getNotifications();
+
+    if (deviceConnected && subscribed) {
+      // Construimos una línea de texto (UTF-8) y terminamos en '\n'
+      String line = "NeoRCP t=" + String(millis()) + " ms\n";
+      // Enviar
+      pTextChar->setValue((uint8_t*)line.c_str(), line.length());
+      pTextChar->notify();
+      // (Opcional) mantener valor legible via READ
+      // pTextChar->setValue(...) ya lo deja como último valor leído
+      Serial.print("[BLE] TX: "); Serial.print(line);
+    }
+  }
+
+  // No bloquees el loop; BLE corre en background
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// lib/main.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+
+void main() {
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebBleTextApp()));
+}
+
+class WebBleTextApp extends StatefulWidget {
+  const WebBleTextApp({super.key});
+  @override
+  State<WebBleTextApp> createState() => _WebBleTextAppState();
+}
+
+class _WebBleTextAppState extends State<WebBleTextApp> {
+  // ==== TUS UUIDS (128-bit) ====
+  static const String kServiceUuid        = "73cfa67c-c85a-45ae-af51-329641b8f315";
+  static const String kCharTextNotifyUuid = "ded8cb86-dd30-4f11-b39c-68f15f2a2f90";
+  // ==============================
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _notifyChar;
+
+  bool _connected = false;
+  String _status = "Sin conexión";
+  final List<String> _lines = [];
+  String _buffer = "";
+
+  Future<void> _pickAndConnect() async {
+    try {
+      setState(() => _status = "Solicitando dispositivo...");
+
+      final options = RequestOptionsBuilder.acceptAllDevices(
+        optionalServices: [kServiceUuid],
+      );
+      final device = await FlutterWebBluetooth.instance.requestDevice(options);
+
+      setState(() {
+        _device = device;
+        _status = "Conectando...";
+      });
+
+      // Conectar (no await: retorna void en esta versión)
+      device.connect();
+
+      setState(() => _status = "Descubriendo servicio...");
+      final services = await device.discoverServices();
+      final service = services.firstWhere((s) => s.uuid == kServiceUuid);
+
+      final characteristic = await service.getCharacteristic(kCharTextNotifyUuid);
+
+      await characteristic.startNotifications();
+      characteristic.value.listen(_onValue, onError: (e) {
+        setState(() => _status = "Error en notificación: $e");
+      });
+
+      setState(() {
+        _notifyChar = characteristic;
+        _connected = true;
+        _status = "Conectado";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: $e";
+        _connected = false;
+      });
+    }
+  }
+
+  void _onValue(ByteData data) {
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = utf8.decode(bytes, allowMalformed: true);
+
+    _buffer += part;
+    final parts = _buffer.split('\n');
+
+    if (parts.length > 1) {
+      setState(() {
+        for (int i = 0; i < parts.length - 1; i++) {
+          _lines.add(piecesSafe(parts[i]));
+        }
+      });
+    }
+    _buffer = parts.last; // puede quedar parcial
+  }
+
+  // Evita renderizar caracteres de control raros
+  String piecesSafe(String s) => s.replaceAll('\r', '');
+
+  Future<void> _disconnect() async {
+    try {
+      await _notifyChar?.stopNotifications();
+    } catch (_) {}
+    try {
+      _device?.disconnect(); // retorna void
+    } catch (_) {}
+    setState(() {
+      _status = "Desconectado";
+      _notifyChar = null;
+      _device = null;
+      _lines.clear();
+      _buffer = "";
+      _connected = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_connected ? "Conectado" : "BLE Web (texto)"),
+        actions: [
+          if (!_connected)
+            TextButton(
+              onPressed: _pickAndConnect,
+              child: const Text("Conectar", style: TextStyle(color: Colors.white)),
+            ),
+          if (_connected)
+            TextButton(
+              onPressed: _disconnect,
+              child: const Text("Desconectar", style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text(_status),
+            subtitle: Text(_device?.name ?? "(sin nombre)"),
+            trailing: Text(_device?.id ?? ""),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) => ListTile(title: Text(_lines[i])),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+// lib/main.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+
+void main() {
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebBleTextApp()));
+}
+
+class WebBleTextApp extends StatefulWidget {
+  const WebBleTextApp({super.key});
+  @override
+  State<WebBleTextApp> createState() => _WebBleTextAppState();
+}
+
+class _WebBleTextAppState extends State<WebBleTextApp> {
+  static const String kServiceUuid = "73cfa67c-c85a-45ae-af51-329641b8f315";
+  static const String kCharTextNotifyUuid = "ded8cb86-dd30-4f11-b39c-68f15f2a2f90";
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _notifyChar;
+
+  bool _connected = false;
+  String _status = "Sin conexión";
+  final List<String> _lines = [];
+  String _buffer = "";
+
+  Future<void> _pickAndConnect() async {
+    try {
+      setState(() => _status = "Solicitando dispositivo...");
+
+      final options = RequestOptionsBuilder.acceptAllDevices(
+        optionalServices: [kServiceUuid],
+      );
+      final device = await FlutterWebBluetooth.instance.requestDevice(options);
+
+      setState(() {
+        _device = device;
+        _status = "Conectando...";
+      });
+
+      device.connect();
+
+      setState(() => _status = "Descubriendo servicio...");
+      final services = await device.discoverServices();
+      final service = services.firstWhere((s) => s.uuid == kServiceUuid);
+
+      final characteristic = await service.getCharacteristic(kCharTextNotifyUuid);
+
+      await characteristic.startNotifications();
+      characteristic.value.listen(_onValue, onError: (e) {
+        setState(() => _status = "Error en notificación: $e");
+      });
+
+      setState(() {
+        _notifyChar = characteristic;
+        _connected = true;
+        _status = "Conectado";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: $e";
+        _connected = false;
+      });
+    }
+  }
+
+  void _onValue(ByteData data) {
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = utf8.decode(bytes, allowMalformed: true);
+
+    _buffer += part;
+    final parts = _buffer.split('\n');
+
+    if (parts.length > 1) {
+      setState(() {
+        for (int i = 0; i < parts.length - 1; i++) {
+          _lines.add(_sanitize(parts[i]));
+        }
+      });
+    }
+    _buffer = parts.last; // texto parcial para la próxima notificación
+  }
+
+  String _sanitize(String s) => s.replaceAll('\r', '');
+
+  Future<void> _disconnect() async {
+    try {
+      await _notifyChar?.stopNotifications();
+    } catch (_) {}
+    try {
+      _device?.disconnect();
+    } catch (_) {}
+    setState(() {
+      _status = "Desconectado";
+      _notifyChar = null;
+      _device = null;
+      _lines.clear();
+      _buffer = "";
+      _connected = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_connected ? "Conectado" : "BLE Web (texto)"),
+        actions: [
+          if (!_connected)
+            TextButton(
+              onPressed: _pickAndConnect,
+              child: const Text("Conectar", style: TextStyle(color: Colors.white)),
+            ),
+          if (_connected)
+            TextButton(
+              onPressed: _disconnect,
+              child: const Text("Desconectar", style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text(_status),
+            subtitle: Text(_device?.name ?? "(sin nombre)"),
+            trailing: Text(_device?.id ?? ""),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) => ListTile(title: Text(_lines[i])),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+
+
+
+
+
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+#define SERVICE_UUID        "73cfa67c-c85a-45ae-af51-329641b8f315"
+#define CHAR_TEXT_UUID      "ded8cb86-dd30-4f11-b39c-68f15f2a2f90"
+
+const int botonPin = 32;   // Pin del botón para medir ritmo
+const int sensorPin = 34;  // Pin del sensor para medir fuerza
+
+BLEServer* pServer = nullptr;
+BLECharacteristic* pTextChar = nullptr;
+BLE2902* pTextCccd = nullptr;
+
+volatile bool deviceConnected = false;
+
+int estadoBotonActual = HIGH;
+int estadoBotonAnterior = HIGH;
+
+unsigned long tiempoAnterior = 0;
+unsigned long ultimoCambio = 0;
+
+const unsigned long intervaloMin = 400;  // ms, para ritmo correcto (100-150 bpm aprox)
+const unsigned long intervaloMax = 700;
+const unsigned long debounceDelay = 50;
+
+int contador = 0;          // Compresiones válidas
+int ritmoCorrecto = 0;     // Pulsos en ritmo correcto
+
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* s) override {
+    deviceConnected = true;
+    Serial.println("[BLE] Central conectado");
+  }
+  void onDisconnect(BLEServer* s) override {
+    deviceConnected = false;
+    Serial.println("[BLE] Central desconectado");
+    s->getAdvertising()->start();
+  }
+};
+
+void setup() {
+  pinMode(botonPin, INPUT_PULLUP);
+  pinMode(sensorPin, INPUT);
+  Serial.begin(115200);
+
+  BLEDevice::init("NeoRCP");
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  BLEService* pService = pServer->createService(SERVICE_UUID);
+
+  pTextChar = pService->createCharacteristic(
+    CHAR_TEXT_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
+  );
+
+  pTextCccd = new BLE2902();
+  pTextCccd->setNotifications(false);
+  pTextChar->addDescriptor(pTextCccd);
+
+  pService->start();
+
+  BLEAdvertising* pAdv = BLEDevice::getAdvertising();
+  pAdv->addServiceUUID(SERVICE_UUID);
+  pAdv->setScanResponse(true);
+  pAdv->setMinPreferred(0x06);
+  pAdv->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("[BLE] Listo. Anunciando servicio...");
+}
+
+void loop() {
+  estadoBotonActual = digitalRead(botonPin);
+  unsigned long tiempoAhora = millis();
+
+  // Detectar flanco de bajada y debounce
+  if (estadoBotonAnterior == HIGH && estadoBotonActual == LOW && (tiempoAhora - ultimoCambio) > debounceDelay) {
+    ultimoCambio = tiempoAhora;
+
+    unsigned long intervalo = tiempoAhora - tiempoAnterior;
+
+    if (intervalo >= intervaloMin && intervalo <= intervaloMax) {
+      contador++;
+      ritmoCorrecto++;
+      Serial.print("✅ Pulso válido #");
+      Serial.print(contador);
+      Serial.print(" - Intervalo: ");
+      Serial.print(intervalo);
+      Serial.println(" ms");
+    } else {
+      Serial.print("⚠️ Pulso fuera de ritmo - Intervalo: ");
+      Serial.print(intervalo);
+      Serial.println(" ms");
+    }
+
+    tiempoAnterior = tiempoAhora;
+
+    // Leer sensor y enviar por BLE si está conectado y notificaciones activadas
+    if (deviceConnected && pTextCccd->getNotifications()) {
+      bool sensorState = digitalRead(sensorPin);
+      String mensaje = "Sensor: ";
+      mensaje += (sensorState == LOW) ? "false\n" : "true\n";  // LOW = detectado
+      pTextChar->setValue((uint8_t*)mensaje.c_str(), mensaje.length());
+      pTextChar->notify();
+      Serial.print("[BLE] TX: ");
+      Serial.print(mensaje);
+    }
+  }
+
+  estadoBotonAnterior = estadoBotonActual;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// lib/main.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+
+void main() {
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebBleRitmoApp()));
+}
+
+/// Punto del gráfico: índice y si el ritmo fue OK.
+class RhythmPoint {
+  final int x;
+  final bool ok;
+  RhythmPoint(this.x, this.ok);
+}
+
+class WebBleRitmoApp extends StatefulWidget {
+  const WebBleRitmoApp({super.key});
+  @override
+  State<WebBleRitmoApp> createState() => _WebBleRitmoAppState();
+}
+
+class _WebBleRitmoAppState extends State<WebBleRitmoApp> {
+  // ==== UUIDs (los mismos que en tu ESP32) ====
+  static const String kServiceUuid        = "73cfa67c-c85a-45ae-af51-329641b8f315";
+  static const String kCharTextNotifyUuid = "ded8cb86-dd30-4f11-b39c-68f15f2a2f90";
+  // =============================================
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _notifyChar;
+
+  bool _connected = false;
+  String _status = "Sin conexión";
+
+  // Consola de líneas crudas
+  final List<String> _lines = [];
+  String _buffer = "";
+
+  // Datos para el chart (últimos N puntos)
+  final List<RhythmPoint> _chart = [];
+  static const int _maxPoints = 50;
+
+  // ---------- BLE ----------
+  Future<List<BluetoothService>> _waitAndDiscover(BluetoothDevice device,
+      {Duration timeout = const Duration(seconds: 8)}) async {
+    final start = DateTime.now();
+    while (true) {
+      try {
+        return await device.discoverServices();
+      } catch (_) {
+        if (DateTime.now().difference(start) > timeout) rethrow;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    }
+  }
+
+  Future<void> _pickAndConnect() async {
+    try {
+      setState(() => _status = "Solicitando dispositivo...");
+
+      final options = RequestOptionsBuilder.acceptAllDevices(
+        optionalServices: [kServiceUuid],
+      );
+      final device = await FlutterWebBluetooth.instance.requestDevice(options);
+
+      setState(() {
+        _device = device;
+        _status = "Conectando...";
+      });
+
+      // Conectar (API retorna void)
+      device.connect();
+
+      setState(() => _status = "Descubriendo servicio...");
+      final services = await _waitAndDiscover(device);
+
+      // (Opcional) loguear servicios encontrados:
+      // for (final s in services) debugPrint('Service: ${s.uuid}');
+
+      final service = services.firstWhere((s) => s.uuid == kServiceUuid);
+      final characteristic = await service.getCharacteristic(kCharTextNotifyUuid);
+
+      await characteristic.startNotifications();
+      characteristic.value.listen(_onValue, onError: (e) {
+        setState(() => _status = "Error en notificación: $e");
+      });
+
+      setState(() {
+        _notifyChar = characteristic;
+        _connected = true;
+        _status = "Conectado";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: $e";
+        _connected = false;
+      });
+    }
+  }
+
+  Future<void> _disconnect() async {
+    try {
+      await _notifyChar?.stopNotifications();
+    } catch (_) {}
+    try {
+      _device?.disconnect();
+    } catch (_) {}
+    setState(() {
+      _status = "Desconectado";
+      _notifyChar = null;
+      _device = null;
+      _lines.clear();
+      _buffer = "";
+      _chart.clear();
+      _connected = false;
+    });
+  }
+
+  // ---------- Recepción y parser ----------
+  void _onValue(ByteData data) {
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = utf8.decode(bytes, allowMalformed: true);
+
+    _buffer += part;
+    final parts = _buffer.split('\n');
+
+    if (parts.length > 1) {
+      setState(() {
+        for (int i = 0; i < parts.length - 1; i++) {
+          final line = _sanitize(parts[i]);
+          if (line.isEmpty) continue;
+          _lines.add(line);
+          _processRitmo(line); // agrega barra verde/roja
+        }
+      });
+    }
+    _buffer = parts.last; // puede quedar parcial
+  }
+
+  String _sanitize(String s) => s.replaceAll('\r', '');
+
+  /// Interpreta líneas del ESP32:
+  ///   "RITMO=1" => OK (verde)
+  ///   "RITMO=0" => BAD (rojo)
+  ///   (soporta "RITMO:1/0" también)
+  void _processRitmo(String line) {
+    final L = line.trim().toUpperCase();
+
+    // Aceptamos RITMO=1/0 o RITMO:1/0
+    final m = RegExp(r'RITMO[:=]\s*([01])').firstMatch(L);
+    if (m == null) return;
+
+    final ok = m.group(1) == '1';
+
+    _chart.add(RhythmPoint(_chart.length, ok));
+    if (_chart.length > _maxPoints) {
+      _chart.removeAt(0);
+      // reindex simple para eje X 0..N
+      for (int i = 0; i < _chart.length; i++) {
+        _chart[i] = RhythmPoint(i, _chart[i].ok);
+      }
+    }
+  }
+
+  // ---------- UI ----------
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_connected ? "Conectado" : "BLE Web (Ritmo)"),
+        actions: [
+          if (!_connected)
+            TextButton(
+              onPressed: _pickAndConnect,
+              child: const Text("Conectar", style: TextStyle(color: Colors.white)),
+            ),
+          if (_connected)
+            TextButton(
+              onPressed: _disconnect,
+              child: const Text("Desconectar", style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text(_status),
+            subtitle: Text(_device?.name ?? "(sin nombre)"),
+            trailing: Text(_device?.id ?? ""),
+          ),
+          const Divider(height: 1),
+          // ---- Chart de barras OK/NO OK ----
+          SizedBox(
+            height: 220,
+            child: SfCartesianChart(
+              title: const ChartTitle(text: 'Ritmo: correcto (verde) / incorrecto (rojo)'),
+              primaryXAxis: NumericAxis(
+                title: const AxisTitle(text: 'Ritmo'),
+                majorGridLines: const MajorGridLines(width: 0.2),
+              ),
+              primaryYAxis: NumericAxis(
+                minimum: -1.2,
+                maximum:  1.2,
+                interval: 1,
+                isVisible: false, // solo interesa color
+              ),
+              series: <CartesianSeries<RhythmPoint, int>>[
+                ColumnSeries<RhythmPoint, int>(
+                  dataSource: _chart,
+                  xValueMapper: (p, _) => p.x,
+                  yValueMapper: (p, _) => p.ok ? 1 : -1,
+                  pointColorMapper: (p, _) => p.ok ? Colors.green : Colors.red,
+                  borderRadius: const BorderRadius.all(Radius.circular(14)),
+                  width: 0.9,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // ---- Consola de texto recibido ----
+          Expanded(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) => ListTile(
+                dense: true,
+                title: Text(_lines[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+// lib/main.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+
+void main() {
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebBleRitmoApp()));
+}
+
+/// Punto del gráfico: índice y si el ritmo fue OK.
+class RhythmPoint {
+  final int x;
+  final bool ok;
+  RhythmPoint(this.x, this.ok);
+}
+
+class WebBleRitmoApp extends StatefulWidget {
+  const WebBleRitmoApp({super.key});
+  @override
+  State<WebBleRitmoApp> createState() => _WebBleRitmoAppState();
+}
+
+class _WebBleRitmoAppState extends State<WebBleRitmoApp> {
+  static const String kServiceUuid = "73cfa67c-c85a-45ae-af51-329641b8f315";
+  static const String kCharTextNotifyUuid = "ded8cb86-dd30-4f11-b39c-68f15f2a2f90";
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _notifyChar;
+
+  bool _connected = false;
+  String _status = "Sin conexión";
+
+  final List<String> _lines = [];
+  String _buffer = "";
+
+  final List<RhythmPoint> _chart = [];
+  static const int _maxPoints = 50;
+
+  Future<List<BluetoothService>> _waitAndDiscover(BluetoothDevice device,
+      {Duration timeout = const Duration(seconds: 8)}) async {
+    final start = DateTime.now();
+    while (true) {
+      try {
+        return await device.discoverServices();
+      } catch (_) {
+        if (DateTime.now().difference(start) > timeout) rethrow;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    }
+  }
+
+  Future<void> _pickAndConnect() async {
+    try {
+      setState(() => _status = "Solicitando dispositivo...");
+
+      final options = RequestOptionsBuilder.acceptAllDevices(
+        optionalServices: [kServiceUuid],
+      );
+      final device = await FlutterWebBluetooth.instance.requestDevice(options);
+
+      setState(() {
+        _device = device;
+        _status = "Conectando...";
+      });
+
+      device.connect();
+
+      setState(() => _status = "Descubriendo servicio...");
+      final services = await _waitAndDiscover(device);
+
+      final service = services.firstWhere((s) => s.uuid == kServiceUuid);
+      final characteristic = await service.getCharacteristic(kCharTextNotifyUuid);
+
+      await characteristic.startNotifications();
+      characteristic.value.listen(_onValue, onError: (e) {
+        setState(() => _status = "Error en notificación: $e");
+      });
+
+      setState(() {
+        _notifyChar = characteristic;
+        _connected = true;
+        _status = "Conectado";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: $e";
+        _connected = false;
+      });
+    }
+  }
+
+  Future<void> _disconnect() async {
+    try {
+      await _notifyChar?.stopNotifications();
+    } catch (_) {}
+    try {
+      _device?.disconnect();
+    } catch (_) {}
+    setState(() {
+      _status = "Desconectado";
+      _notifyChar = null;
+      _device = null;
+      _lines.clear();
+      _buffer = "";
+      _chart.clear();
+      _connected = false;
+    });
+  }
+
+  void _onValue(ByteData data) {
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = utf8.decode(bytes, allowMalformed: true);
+
+    _buffer += part;
+    final parts = _buffer.split('\n');
+
+    if (parts.length > 1) {
+      setState(() {
+        for (int i = 0; i < parts.length - 1; i++) {
+          final line = _sanitize(parts[i]);
+          if (line.isEmpty) continue;
+          _lines.add(line);
+          _processRitmo(line);
+        }
+      });
+    }
+    _buffer = parts.last;
+  }
+
+  String _sanitize(String s) => s.replaceAll('\r', '');
+
+  void _processRitmo(String line) {
+    final L = line.trim();
+
+    if (L == '1' || L == '0') {
+      final ok = L == '1';
+
+      _chart.add(RhythmPoint(_chart.length, ok));
+      if (_chart.length > _maxPoints) {
+        _chart.removeAt(0);
+        for (int i = 0; i < _chart.length; i++) {
+          _chart[i] = RhythmPoint(i, _chart[i].ok);
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_connected ? "Conectado" : "BLE Web (Ritmo)"),
+        actions: [
+          if (!_connected)
+            TextButton(
+              onPressed: _pickAndConnect,
+              child: const Text("Conectar", style: TextStyle(color: Colors.white)),
+            ),
+          if (_connected)
+            TextButton(
+              onPressed: _disconnect,
+              child: const Text("Desconectar", style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text(_status),
+            subtitle: Text(_device?.name ?? "(sin nombre)"),
+            trailing: Text(_device?.id ?? ""),
+          ),
+          const Divider(height: 1),
+          SizedBox(
+            height: 220,
+            child: SfCartesianChart(
+              title: const ChartTitle(text: 'Ritmo: correcto (verde) / incorrecto (rojo)'),
+              primaryXAxis: NumericAxis(
+                title: const AxisTitle(text: 'Ritmo'),
+                majorGridLines: const MajorGridLines(width: 0.2),
+              ),
+              primaryYAxis: NumericAxis(
+                minimum: -1.2,
+                maximum:  1.2,
+                interval: 1,
+                isVisible: false,
+              ),
+              series: <CartesianSeries<RhythmPoint, int>>[
+                ColumnSeries<RhythmPoint, int>(
+                  dataSource: _chart,
+                  xValueMapper: (p, _) => p.x,
+                  yValueMapper: (p, _) => p.ok ? 1 : -1,
+                  pointColorMapper: (p, _) => p.ok ? Colors.green : Colors.red,
+                  borderRadius: const BorderRadius.all(Radius.circular(14)),
+                  width: 0.9,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) => ListTile(
+                dense: true,
+                title: Text(_lines[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
