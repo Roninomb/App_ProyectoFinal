@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ble/ble_manager.dart';
-
-// Providers que ya usabas para el resultado
-import '../providers/user_provider.dart';
-// Nuevo provider central de entrenamiento
 import '../providers/training_provider.dart';
 
 class EntrenamientoScreen extends ConsumerStatefulWidget {
@@ -17,32 +13,22 @@ class EntrenamientoScreen extends ConsumerStatefulWidget {
 
 class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
   final BleManager bleManager = BleManager();
+  bool datosRecibidos = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Suscripción a los datos BLE
     bleManager.escucharDatos((data) {
-      // 1) Actualiza el provider central
       ref.read(trainingProvider.notifier).updateFromBle(data);
-
-      // 2) (Opcional) Sincroniza con los providers del ResultadoScreen
-      final t = ref.read(trainingProvider);
-      if (t.fuerza != null) {
-        ref.read(fuerzaProvider.notifier).state = t.fuerza!;
-      }
-      if (t.pulsos != null) {
-        ref.read(pulsosProvider.notifier).state = t.pulsos!;
-      }
-      if (t.ritmo != null) {
-        ref.read(ritmoProvider.notifier).state = t.ritmo!;
-      }
-
+      setState(() {
+        datosRecibidos = true;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('¡Datos recibidos!')),
         );
+        // Navega automáticamente a la pantalla de resultados cuando llegan los datos
+        Navigator.pushNamed(context, '/resultado');
       }
     });
   }
@@ -55,43 +41,11 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final training = ref.watch(trainingProvider);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Entrenamiento')),
-      body: Center(
-        child: (training.raw == null)
-            ? const _AnimatedTraining()
-            : _TrainingValuesView(training: training),
+      body: const Center(
+        child: _AnimatedTraining(),
       ),
-    );
-  }
-}
-
-class _TrainingValuesView extends StatelessWidget {
-  final TrainingData training;
-  const _TrainingValuesView({required this.training});
-
-  @override
-  Widget build(BuildContext context) {
-    final fuerzaTxt = training.fuerza == null
-        ? '—'
-        : '${training.fuerza!.toStringAsFixed(1)} %';
-    final pulsosTxt = training.pulsos == null ? '—' : '${training.pulsos} %';
-    final ritmoTxt =
-        training.ritmo == null ? '—' : (training.ritmo! ? 'Correcto' : 'Incorrecto');
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('💪 Fuerza efectiva: $fuerzaTxt'),
-        const SizedBox(height: 8),
-        Text('❤️ Pulsos efectivos: $pulsosTxt'),
-        const SizedBox(height: 8),
-        Text('🕒 Ritmo: $ritmoTxt'),
-        const SizedBox(height: 16),
-        Text('RAW: ${training.raw}'),
-      ],
     );
   }
 }
