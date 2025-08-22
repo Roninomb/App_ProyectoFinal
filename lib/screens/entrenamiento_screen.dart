@@ -1,101 +1,227 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../ble/ble_manager.dart';
-import '../providers/training_provider.dart';
+import '../providers/ble_provider.dart';
+import '../providers/user_provider.dart';
 
 class EntrenamientoScreen extends ConsumerStatefulWidget {
   const EntrenamientoScreen({super.key});
 
   @override
-  ConsumerState<EntrenamientoScreen> createState() =>
-      _EntrenamientoScreenState();
+ createState() => _EntrenamientoScreenState();
 }
 
-class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen> {
-  final BleManager bleManager = BleManager();
-  bool datosRecibidos = false;
+class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
+    with TickerProviderStateMixin {
+  static const _bgColor = Color(0xFFEFF7FD);
 
-  @override
-  void initState() {
-    super.initState();
-    bleManager.escucharDatos((data) {
-      ref.read(trainingProvider.notifier).updateFromBle(data);
-      setState(() {
-        datosRecibidos = true;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('¡Datos recibidos!')),
-        );
-        // Navega automáticamente a la pantalla de resultados cuando llegan los datos
-        Navigator.pushNamed(context, '/resultado');
-      }
-    });
-  }
+  bool _empezado = false;
+  Timer? _antiSpam; // evita toques repetidos
 
   @override
   void dispose() {
-    bleManager.cancelarEscucha();
+    _antiSpam?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final bleCtrl = ref.read(bleProvider.notifier);
+    final nombre = ref.watch(nombreProvider);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrenamiento')),
-      body: const Center(
-        child: _AnimatedTraining(),
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: _bgColor,
+        foregroundColor: Colors.black87,
+        title: const Text('Entrenamiento'),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Hola, $nombre',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ---- Card principal de ENTRENAMIENTO (solo animación) ----
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1A000000),
+                        blurRadius: 16,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.heat_pump_rounded, color: Color.fromARGB(115, 240, 53, 53)),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Listo para comenzar',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 180,
+                        child: Center(
+                          child: _empezado
+                              ? const _PulseRings()   // animación en vivo
+                              : const _StandbyHint(), // texto sutil antes de empezar
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ---- Botón Acción ----
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _empezado
+                        ? null
+                        : () async {
+                            _antiSpam?.cancel();
+                            _antiSpam = Timer(const Duration(seconds: 1), () {});
+                            await bleCtrl.startTrainingOnce(); // envía START\n una sola vez
+                            if (!mounted) return;
+                            setState(() => _empezado = true);
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF26464),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      textStyle: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('Comenzar entrenamiento'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-// Animación simple de entrenamiento (círculo pulsante)
-class _AnimatedTraining extends StatefulWidget {
-  const _AnimatedTraining();
+class _StandbyHint extends StatelessWidget {
+  const _StandbyHint();
 
   @override
-  State<_AnimatedTraining> createState() => _AnimatedTrainingState();
+  Widget build(BuildContext context) {
+    return const Text(
+      'Presioná "Comenzar entrenamiento".',
+      style: TextStyle(color: Colors.black54),
+      textAlign: TextAlign.center,
+    );
+  }
 }
 
-class _AnimatedTrainingState extends State<_AnimatedTraining>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scale;
-
+/// Animación de pulsos concéntricos
+class _PulseRings extends StatefulWidget {
+  // ignore: unused_element_parameter
+  const _PulseRings({super.key});
   @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 900),
-      vsync: this,
-    )..repeat(reverse: true);
-    _scale = Tween(begin: 0.8, end: 1.1)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-  }
+  State<_PulseRings> createState() => _PulseRingsState();
+}
+
+class _PulseRingsState extends State<_PulseRings>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))
+        ..repeat();
 
   @override
   void dispose() {
-    _controller.dispose();
+    _c.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _scale,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scale.value,
-          child: Container(
-            width: 80,
-            height: 80,
+    return SizedBox(
+      width: 140,
+      height: 140,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          for (int i = 0; i < 3; i++) _Ring(anim: _c, delay: i * 0.2),
+          Container(
+            width: 18,
+            height: 18,
             decoration: const BoxDecoration(
-              color: Colors.blueAccent,
+              color: Colors.teal,
               shape: BoxShape.circle,
             ),
-            child: const Center(
-              child: Icon(Icons.fitness_center, color: Colors.white, size: 40),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Ring extends StatelessWidget {
+  final Animation<double> anim;
+  final double delay;
+  const _Ring({required this.anim, required this.delay});
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(
+      parent: anim,
+      curve: Interval(delay, (delay + 0.8).clamp(0, 1.0), curve: Curves.easeOut),
+    );
+    return AnimatedBuilder(
+      animation: curved,
+      builder: (_, __) {
+        final v = curved.value; // 0..1
+        final scale = 0.6 + 0.6 * v; // 0.6 → 1.2
+        final opacity = 1.0 - v;     // 1 → 0
+        return Opacity(
+          opacity: opacity,
+          child: Transform.scale(
+            scale: scale,
+            child: Container(
+              width: 110,
+              height: 110,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.teal, width: 2),
+              ),
             ),
           ),
         );

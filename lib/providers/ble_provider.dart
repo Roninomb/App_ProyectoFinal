@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// UUIDs de servicio/características (ajusta si usás otros)
+/// Ajustá estos UUIDs si tu ESP32 usa otros
 final _serviceUuid    = Uuid.parse("f0000001-0451-4000-b000-000000000000");
 final _ctrlCharUuid   = Uuid.parse("f0000002-0451-4000-b000-000000000000"); // Write
 final _resultCharUuid = Uuid.parse("f0000003-0451-4000-b000-000000000000"); // Notify
@@ -17,7 +17,7 @@ class BleState {
   final bool connecting;
   final bool connected;
   final DiscoveredDevice? device;
-  final String? lastJson;
+  final String? lastJson;      // JSON completo reensamblado
   final String? error;
   final bool connectTimedOut;
 
@@ -59,16 +59,22 @@ class BleController extends StateNotifier<BleState> {
   StreamSubscription<ConnectionStateUpdate>? _connSub;
   StreamSubscription<List<int>>? _notifySub;
 
+  // Buffer para reensamblar por '\n'
+  String _rxBuf = '';
+
+  // Deduplicación de START
+  bool _startSent = false;
+  Future<void>? _startInFlight;
+
   // ---------- Permisos + estado Bluetooth ----------
   Future<bool> _ensurePermissions() async {
     final statuses = await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
-      Permission.location,
+      Permission.location, // requerido para scan en Android <= 11
     ].request();
-
-    final allGranted = statuses.values.every((s) => s.isGranted);
-    if (!allGranted) {
+    final ok = statuses.values.every((s) => s.isGranted);
+    if (!ok) {
       state = state.copyWith(error: "Permisos BLE rechazados.");
       return false;
     }
@@ -79,7 +85,6 @@ class BleController extends StateNotifier<BleState> {
     try {
       final s = await _ble.statusStream.timeout(timeout).first;
       if (s == BleStatus.ready) return true;
-
       state = state.copyWith(error: _statusToMessage(s));
       return false;
     } on TimeoutException {
@@ -90,45 +95,33 @@ class BleController extends StateNotifier<BleState> {
 
   String _statusToMessage(BleStatus s) {
     switch (s) {
-      case BleStatus.poweredOff:
-        return 'Bluetooth desactivado.';
-      case BleStatus.locationServicesDisabled:
-        return 'Ubicación desactivada (requerida para escanear).';
-      case BleStatus.unauthorized:
-        return 'Permisos BLE no autorizados.';
-      case BleStatus.unsupported:
-        return 'BLE no soportado en este dispositivo.';
-      case BleStatus.ready:
-        return '';
-      case BleStatus.unknown:
-        return 'Estado BLE desconocido.';
+      case BleStatus.poweredOff: return 'Bluetooth desactivado.';
+      case BleStatus.locationServicesDisabled: return 'Ubicación desactivada (requerida para escanear).';
+      case BleStatus.unauthorized: return 'Permisos BLE no autorizados.';
+      case BleStatus.unsupported: return 'BLE no soportado en este dispositivo.';
+      case BleStatus.ready: return '';
+      case BleStatus.unknown: return 'Estado BLE desconocido.';
     }
   }
 
-  // ---------- Escaneo / Conexión ----------
+  // ---------- Escaneo ----------
   Future<void> startScan({
     String namePrefix = "NeoRCP",
-    Duration timeout = const Duration(seconds: 10),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
-    // Reset previo
     await _scanSub?.cancel();
-    state = state.copyWith(scanning: false, error: null, connectTimedOut: false);
+    state = state.copyWith(scanning: false, error: null, connectTimedOut: false, device: null);
 
-    // 1) permisos
     if (!await _ensurePermissions()) return;
-
-    // 2) estado BT
     if (!await _waitUntilReady()) return;
 
-    // 3) escaneo con timeout real
     state = state.copyWith(scanning: true);
-
-
-    await Future.delayed(const Duration(seconds: 2));
-
     final found = Completer<void>();
 
-    _scanSub = _ble.scanForDevices(withServices: [_serviceUuid]).listen(
+    // withServices vacío: más compatible si el UUID no aparece en advertising
+    _scanSub = _ble
+        .scanForDevices(withServices: const [], scanMode: ScanMode.lowLatency)
+        .listen(
       (d) {
         if (d.name.isNotEmpty && d.name.startsWith(namePrefix)) {
           _scanSub?.cancel();
@@ -153,11 +146,12 @@ class BleController extends StateNotifier<BleState> {
       }
     });
 
-    await found.future; // termina cuando cierra el scan (encontró/timeout/error)
+    await found.future;
   }
 
+  // ---------- Conexión ----------
   Future<void> connectWithTimeout({
-    Duration timeout = const Duration(seconds: 10),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     final d = state.device;
     if (d == null) {
@@ -169,16 +163,15 @@ class BleController extends StateNotifier<BleState> {
 
     final completer = Completer<void>();
     final timer = Timer(timeout, () {
-      if (!completer.isCompleted) {
-        completer.completeError(TimeoutException("timeout"));
-      }
+      if (!completer.isCompleted) completer.completeError(TimeoutException("timeout"));
     });
 
     _connSub = _ble.connectToDevice(id: d.id, connectionTimeout: timeout).listen(
-      (u) {
+      (u) async {
         switch (u.connectionState) {
           case DeviceConnectionState.connected:
             state = state.copyWith(connected: true, connecting: false);
+            await subscribeResult(); // habilita CCCD y escucha resultados
             if (!completer.isCompleted) completer.complete();
             break;
           case DeviceConnectionState.disconnected:
@@ -209,15 +202,16 @@ class BleController extends StateNotifier<BleState> {
   }
 
   Future<void> scanAndConnect({
-    Duration scanTimeout = const Duration(seconds: 10),
-    Duration connectTimeout = const Duration(seconds: 10),
+    Duration scanTimeout = const Duration(seconds: 30),
+    Duration connectTimeout = const Duration(seconds: 30),
     String namePrefix = "NeoRCP",
   }) async {
     await startScan(namePrefix: namePrefix, timeout: scanTimeout);
-    if (state.device == null) return; // no intentes conectar si no hay device
+    if (state.device == null) return;
     await connectWithTimeout(timeout: connectTimeout);
   }
 
+  // ---------- Notificaciones (JSON terminado en '\n') ----------
   Future<void> subscribeResult() async {
     final d = state.device;
     if (d == null) return;
@@ -228,12 +222,25 @@ class BleController extends StateNotifier<BleState> {
       characteristicId: _resultCharUuid,
       deviceId: d.id,
     );
+
+    _rxBuf = '';
     _notifySub = _ble.subscribeToCharacteristic(c).listen(
-      (data) => state = state.copyWith(lastJson: utf8.decode(data)),
+      (data) {
+        _rxBuf += utf8.decode(data, allowMalformed: true);
+        int nl;
+        while ((nl = _rxBuf.indexOf('\n')) != -1) {
+          final msg = _rxBuf.substring(0, nl).trim();
+          _rxBuf = _rxBuf.substring(nl + 1);
+          if (msg.isNotEmpty) {
+            state = state.copyWith(lastJson: msg);
+          }
+        }
+      },
       onError: (e) => state = state.copyWith(error: 'Error de notificación: $e'),
     );
   }
 
+  // ---------- Comandos ----------
   Future<void> sendCommand(String cmd) async {
     final d = state.device;
     if (d == null) return;
@@ -242,11 +249,23 @@ class BleController extends StateNotifier<BleState> {
       characteristicId: _ctrlCharUuid,
       deviceId: d.id,
     );
-    await _ble.writeCharacteristicWithResponse(c, value: utf8.encode(cmd));
+    final bytes = utf8.encode(cmd.endsWith('\n') ? cmd : '$cmd\n');
+    await _ble.writeCharacteristicWithResponse(c, value: bytes);
+    // Si tu característica soporta sin respuesta:
+    // await _ble.writeCharacteristicWithoutResponse(c, value: bytes);
   }
 
-    Future<void> startTraining() => sendCommand("START");
-  
+  Future<void> startTraining() => sendCommand("START");
+
+  /// Lo manda una sola vez por sesión aunque lo llamen varias veces.
+  Future<void> startTrainingOnce() {
+    if (_startSent) return Future.value();
+    if (_startInFlight != null) return _startInFlight!;
+    return _startInFlight = startTraining().whenComplete(() {
+      _startSent = true;
+      _startInFlight = null;
+    });
+  }
 
   // ---------- Cancelaciones / limpieza ----------
   Future<void> stopScan() async {
@@ -261,21 +280,20 @@ class BleController extends StateNotifier<BleState> {
     state = state.copyWith(connecting: false, connected: false);
   }
 
-  /// Corta scan + connect + notificaciones y deja el estado listo para reintentar
   Future<void> abortAll() async {
     await stopScan();
     await cancelConnection();
     await _notifySub?.cancel();
     _notifySub = null;
-
+    _rxBuf = '';
+    _startSent = false;
+    _startInFlight = null;
     state = state.copyWith(
       scanning: false,
       connecting: false,
       connected: false,
       connectTimedOut: false,
       error: null,
-      // Si querés limpiar también el device:
-      // device: null,
     );
   }
 
@@ -284,9 +302,11 @@ class BleController extends StateNotifier<BleState> {
     _notifySub = null;
     await _connSub?.cancel();
     _connSub = null;
+    _rxBuf = '';
+    _startSent = false;
+    _startInFlight = null;
     state = state.copyWith(connected: false, connecting: false);
   }
-  
 
   @override
   void dispose() {
