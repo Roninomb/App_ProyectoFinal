@@ -99,7 +99,7 @@ class HomeScreen extends ConsumerWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: camposValidos
-                            ? () => context.pushNamed('pretrain')
+                            ? () => context.go('/pretrain')
                             : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: camposValidos
