@@ -245,8 +245,8 @@ class BleController extends StateNotifier<BleState> {
     await _ble.writeCharacteristicWithResponse(c, value: utf8.encode(cmd));
   }
 
-  Future<void> startTraining() => sendCommand("START");
-  Future<void> abortTraining() => sendCommand("ABORT");
+    Future<void> startTraining() => sendCommand("START");
+  
 
   // ---------- Cancelaciones / limpieza ----------
   Future<void> stopScan() async {
