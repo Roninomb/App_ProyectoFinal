@@ -36,6 +36,14 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.ACCES_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+ <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+ <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
+ <!-- Android 12+ -->
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+ <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+ <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
 
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

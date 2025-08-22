@@ -15,6 +15,7 @@ class ResultadoScreen extends ConsumerWidget {
     final ritmo = ref.watch(ritmoProvider);
 
     Future<void> enviarEmail() async {
+      // Validación previa (sin await → seguro usar context)
       if (email.trim().isEmpty || nombre.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('El nombre o el email están vacíos.')),
@@ -30,10 +31,15 @@ class ResultadoScreen extends ConsumerWidget {
           pulsos: pulsos,
           ritmo: ritmo,
         );
+
+        // ⚠️ Después del await: chequear que el widget siga montado
+        if (!context.mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('📩 Reporte enviado correctamente')),
         );
       } catch (e) {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('❌ Error al enviar email: $e')),
         );
@@ -43,9 +49,12 @@ class ResultadoScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.blue[50],
       appBar: AppBar(
-          centerTitle: true,
-          title: const Text('Resultado del entrenamiento',
-              style: TextStyle(fontWeight: FontWeight.bold))),
+        centerTitle: true,
+        title: const Text(
+          'Resultado del entrenamiento',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
       body: Center(
         child: Card(
           margin: const EdgeInsets.all(24),
@@ -67,6 +76,8 @@ class ResultadoScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
+
+                // Métricas
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -77,15 +88,14 @@ class ResultadoScreen extends ConsumerWidget {
                     Text('🕒 Ritmo: ${ritmo ? 'Correcto' : 'Incorrecto'}'),
                   ],
                 ),
+
                 const SizedBox(height: 32),
+
+                // Botón (child al final para cumplir el lint)
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: enviarEmail,
-                    child: const Text(
-                      '📧 Enviar reporte por email',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
@@ -93,6 +103,10 @@ class ResultadoScreen extends ConsumerWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
+                    ),
+                    child: const Text(
+                      '📧 Enviar reporte por email',
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),

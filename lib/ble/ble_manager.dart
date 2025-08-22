@@ -6,32 +6,40 @@ class BleManager {
   final flutterReactiveBle = FlutterReactiveBle();
   late DiscoveredDevice device;
 
-  Future<bool> conectar({
-    required Function(Map<String, String>) onData,
-    required void Function(StreamSubscription<DiscoveredDevice>) onScanSubscriptionCreated,
-  }) async {
+  StreamSubscription<List<int>>? _dataSubscription;
+  StreamSubscription<ConnectionStateUpdate>? _connectionSub;
+
+  // Conectar al dispositivo "NeoRcp"
+  Future<bool> conectar() async {
     final completer = Completer<bool>();
     late StreamSubscription<DiscoveredDevice> scanSub;
 
     scanSub = flutterReactiveBle
         .scanForDevices(
-          withServices: [Uuid.parse("6400001-B5A3-F33-E0A9-E50E24DCCA9E")],
+          withServices: [Uuid.parse("00006400-0000-1000-8000-00805f9b34fb")], // UUID válido
           scanMode: ScanMode.lowLatency,
         )
         .listen((d) async {
       if (d.name == "NeoRcp") {
         device = d;
         await scanSub.cancel();
-        await flutterReactiveBle.connectToDevice(id: d.id).first;
-        _escuchar(onData);
-        if (!completer.isCompleted) {
-          completer.complete(true);
-        }
+
+        _connectionSub = flutterReactiveBle.connectToDevice(id: d.id).listen(
+          (update) {
+            if (update.connectionState == DeviceConnectionState.connected &&
+                !completer.isCompleted) {
+              completer.complete(true);
+            }
+            if (update.connectionState == DeviceConnectionState.disconnected &&
+                !completer.isCompleted) {
+              completer.complete(false);
+            }
+          },
+        );
       }
     });
 
-    onScanSubscriptionCreated(scanSub);
-
+    // Timeout a los 10s
     Future.delayed(const Duration(seconds: 10), () async {
       if (!completer.isCompleted) {
         await scanSub.cancel();
@@ -42,24 +50,39 @@ class BleManager {
     return completer.future;
   }
 
-  void _escuchar(Function(Map<String, String>) onData) {
+  // Escuchar datos durante el entrenamiento
+  void escucharDatos(Function(Map<String, String>) onData) {
     final characteristic = QualifiedCharacteristic(
-      serviceId: Uuid.parse("6400001-B5A3-F33-E0A9-E50E24DCCA9E"),
-      characteristicId: Uuid.parse("6400002-B5A3-F33-E0A9-E50E24DCCA9E"),
+      serviceId: Uuid.parse("00006400-0000-1000-8000-00805f9b34fb"),
+      characteristicId: Uuid.parse("00006401-0000-1000-8000-00805f9b34fb"),
       deviceId: device.id,
     );
 
-    flutterReactiveBle
+    _dataSubscription = flutterReactiveBle
         .subscribeToCharacteristic(characteristic)
         .listen((data) {
-      final decoded = utf8.decode(data);
-      final parsed = Map.fromEntries(
-        decoded.split(",").map((e) {
-          final partes = e.split("=");
-          return MapEntry(partes[0], partes[1]);
-        }),
-      );
-      onData(parsed);
+      try {
+        final decoded = utf8.decode(data);
+        final parsed = <String, String>{};
+        for (final part in decoded.split(",")) {
+          final kv = part.split("=");
+          if (kv.length == 2) {
+            parsed[kv[0].trim()] = kv[1].trim();
+          }
+        }
+        onData(parsed);
+      } catch (e) {
+        // ignore: avoid_print
+        print("Error decodificando datos BLE: $e");
+      }
     });
+  }
+
+  // Cancelar escucha al finalizar entrenamiento
+  Future<void> cancelarEscucha() async {
+    await _dataSubscription?.cancel();
+    _dataSubscription = null;
+    await _connectionSub?.cancel();
+    _connectionSub = null;
   }
 }
