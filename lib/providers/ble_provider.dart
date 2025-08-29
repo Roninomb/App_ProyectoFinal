@@ -20,7 +20,7 @@ class BleState {
   final bool connecting;
   final bool connected;
   final DiscoveredDevice? device;
-  final String? lastJson;   // JSON completo reensamblado (terminado por '\n')
+  final String? lastJson;   // JSON reensamblado por '\n'
   final String? error;
   final bool connectTimedOut;
 
@@ -55,8 +55,8 @@ class BleState {
 
   @override
   String toString() =>
-      'BleState(scanning:$scanning, connecting:$connecting, connected:$connected, '
-      'device:${device?.name}/${device?.id}, error:$error, lastJson:$lastJson)';
+      'BleState(scan:$scanning, conn:$connecting, ok:$connected, '
+      'dev:${device?.name}/${device?.id}, err:$error, lastJson:$lastJson)';
 }
 
 class BleController extends StateNotifier<BleState> {
@@ -68,14 +68,14 @@ class BleController extends StateNotifier<BleState> {
   StreamSubscription<ConnectionStateUpdate>? _connSub;
   StreamSubscription<List<int>>? _notifySub;
 
-  // Buffer para reensamblar mensajes que llegan en trozos hasta '\n'
+  // Buffer para reensamblar por '\n'
   String _rxBuf = '';
 
   // Deduplicación de START
   bool _startSent = false;
   Future<void>? _startInFlight;
 
-  // -------- Helpers --------
+  // ---------- Helpers ----------
   bool _guardWeb(String action) {
     if (kIsWeb) {
       state = state.copyWith(error: 'BLE no está soportado en Web (acción: $action).');
@@ -85,11 +85,10 @@ class BleController extends StateNotifier<BleState> {
   }
 
   Future<bool> _ensurePermissions() async {
-    // Android 12+: scan/connect; Android <=11: muchos equipos aún piden locationWhenInUse
     final res = await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
+      Permission.locationWhenInUse, // útil en Android <= 11
     ].request();
 
     final ok = res.values.every((s) => s.isGranted);
@@ -129,10 +128,10 @@ class BleController extends StateNotifier<BleState> {
     }
   }
 
-  // -------- API pública utilitaria --------
+  // ---------- API pública ----------
   void clearLastJson() => state = state.copyWith(lastJson: null, error: null);
 
-  // -------- Escaneo --------
+  // ---------- Escaneo ----------
   Future<void> startScan({
     String namePrefix = 'NeoRCP',
     Duration timeout = const Duration(seconds: 30),
@@ -183,7 +182,7 @@ class BleController extends StateNotifier<BleState> {
     await found.future;
   }
 
-  // -------- Conexión --------
+  // ---------- Conexión ----------
   Future<void> connectWithTimeout({
     Duration timeout = const Duration(seconds: 30),
   }) async {
@@ -251,7 +250,7 @@ class BleController extends StateNotifier<BleState> {
     await connectWithTimeout(timeout: connectTimeout);
   }
 
-  // -------- Notificaciones (reensamble por '\n') --------
+  // ---------- Notificaciones (reensamble por '\n') ----------
   Future<void> subscribeResult() async {
     if (_guardWeb('subscribe')) return;
 
@@ -275,7 +274,10 @@ class BleController extends StateNotifier<BleState> {
           final msg = _rxBuf.substring(0, nl).trim();
           _rxBuf = _rxBuf.substring(nl + 1);
           if (msg.isNotEmpty) {
-            // debugPrint('[BLE] JSON <- $msg');
+            // 👇 LOG CLAVE de cada paquete reensamblado (ACK / tick / final)
+            // ignore: avoid_print
+            print('[BLE][notify] $msg');
+
             state = state.copyWith(lastJson: msg);
           }
         }
@@ -284,7 +286,7 @@ class BleController extends StateNotifier<BleState> {
     );
   }
 
-  // -------- Comandos --------
+  // ---------- Comandos ----------
   Future<void> sendCommand(String cmd) async {
     if (_guardWeb('write')) return;
 
@@ -296,15 +298,16 @@ class BleController extends StateNotifier<BleState> {
       characteristicId: _ctrlCharUuid,
       deviceId: d.id,
     );
+
     final bytes = utf8.encode(cmd.endsWith('\n') ? cmd : '$cmd\n');
     await _ble.writeCharacteristicWithResponse(c, value: bytes);
-    // Si tu característica soporta sin respuesta:
+    // Si tu característica soporta sin respuesta, podrías usar:
     // await _ble.writeCharacteristicWithoutResponse(c, value: bytes);
   }
 
   Future<void> startTraining() => sendCommand('START');
 
-  /// Envía START una sola vez por sesión (y limpia resultados previos).
+  /// Envía START una sola vez por sesión y limpia resultados previos.
   Future<void> startTrainingOnce() {
     clearLastJson(); // ✅ evita navegar por ACK/JSON viejo
     if (_startSent) return Future.value();
@@ -315,7 +318,7 @@ class BleController extends StateNotifier<BleState> {
     });
   }
 
-  // -------- Cancelaciones / limpieza --------
+  // ---------- Cancelaciones / limpieza ----------
   Future<void> stopScan() async {
     await _scanSub?.cancel();
     _scanSub = null;
@@ -346,7 +349,7 @@ class BleController extends StateNotifier<BleState> {
       connected: false,
       connectTimedOut: false,
       error: null,
-      lastJson: null, // ✅ limpiar para no usar residuos
+      lastJson: null, // ✅ limpiar residuos
     );
   }
 
@@ -365,7 +368,7 @@ class BleController extends StateNotifier<BleState> {
     state = state.copyWith(
       connected: false,
       connecting: false,
-      lastJson: null, // ✅ limpiar para no usar residuos
+      lastJson: null, // ✅ limpiar residuos
     );
   }
 

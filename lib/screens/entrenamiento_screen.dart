@@ -45,27 +45,25 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       upperBound: 1.08,
     )..repeat(reverse: true);
 
-    // Escucha manual del provider para poder usarlo fuera de build().
+    // Escucha BLE fuera de build() sin violar reglas de Riverpod.
     _bleSub = ref.listenManual<BleState>(bleProvider, (prev, next) {
       final msg = next.lastJson;
       if (msg == null || msg.isEmpty || prev?.lastJson == msg) return;
-
-      // ⛔ Ignorar ACK y mensajes intermedios
-      if (!_isFinalResult(msg)) return;
+      if (!_isFinalResult(msg)) return; // ignorar ACK/ticks/otros
 
       try {
         final Map<String, dynamic> raw = json.decode(msg);
         final Map<String, String> data =
             raw.map((k, v) => MapEntry(k, '$v'));
-
+        // Guarda en el provider de resultados (si ya lo usás en ResultadoScreen).
         ref.read(trainingProvider.notifier).updateFromBle(data);
-
-        if (!mounted) return;
-        context.go('/resultado');
       } catch (_) {
-        if (!mounted) return;
-        setState(() => _error = 'Datos finales inválidos (no es JSON)');
+        // si viene malformado, no navegamos
+        return;
       }
+
+      if (!mounted) return;
+      context.go('/resultado');
     });
   }
 
@@ -83,7 +81,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     });
 
     try {
-      // Envía START (el provider ya manejará deduplicación/limpieza)
+      // El provider limpia lastJson y deduplica START.
       await ref.read(bleProvider.notifier).startTrainingOnce();
     } catch (_) {
       if (!mounted) return;
@@ -105,7 +103,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ble = ref.watch(bleProvider); // solo para mostrar estado
+    final ble = ref.watch(bleProvider); // para mostrar estado
 
     return Scaffold(
       appBar: AppBar(
@@ -134,8 +132,8 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                       duration: const Duration(milliseconds: 300),
                       child: Text(
                         _started
-                            ? 'Realizá las compresiones según las indicaciones.\nAl finalizar, se procesarán los datos automáticamente.'
-                            : 'Cuando estés listo, presioná “Empezar”.\nEl dispositivo BLE ya debería estar conectado.',
+                            ? 'Realizá las compresiones. Al finalizar se procesan los datos automáticamente.'
+                            : 'Cuando estés listo, presioná “Empezar”.',
                         key: ValueKey(_started),
                         style: theme.textTheme.bodyMedium,
                         textAlign: TextAlign.center,
@@ -153,7 +151,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                   ],
                 ),
 
-                // Animación “respiración” + indicador
+                // Animación “respiración” + estado
                 AnimatedBuilder(
                   animation: _pulse,
                   builder: (context, _) {
@@ -196,14 +194,22 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '$ble',
+                              ble.connected ? 'Bluetooth listo' : 'Conectando…',
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
                               textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
                             ),
+
+                            // ▼ DEBUG opcional: ver el último mensaje BLE recibido
+                            // const SizedBox(height: 6),
+                            // Text(
+                            //   ref.watch(bleProvider).lastJson ?? '—',
+                            //   style: theme.textTheme.labelSmall,
+                            //   textAlign: TextAlign.center,
+                            //   maxLines: 2,
+                            //   overflow: TextOverflow.ellipsis,
+                            // ),
                           ],
                         ),
                       ),
