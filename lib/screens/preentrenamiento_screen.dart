@@ -37,8 +37,8 @@ class PreEntrenamientoScreen extends ConsumerWidget {
         if (!ok) return;
 
         await bleCtrl.scanAndConnect(
-          scanTimeout: const Duration(seconds: 10),
-          connectTimeout: const Duration(seconds: 10),
+          scanTimeout: const Duration(seconds: 30),
+          connectTimeout: const Duration(seconds: 30),
           namePrefix: "NeoRCP",
         );
       });
