@@ -1,6 +1,8 @@
+// lib/screens/preentrenamiento_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import 'package:myapp/utils/permissions.dart';
 import '../providers/ble_provider.dart';
 import '../providers/user_provider.dart';
@@ -12,41 +14,35 @@ class PreEntrenamientoScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ble = ref.watch(bleProvider);
+    final ble     = ref.watch(bleProvider);
     final bleCtrl = ref.read(bleProvider.notifier);
-    final nombre = ref.watch(nombreProvider);
+    final nombre  = ref.watch(nombreProvider);
 
-    // Conexión automática al entrar en la pantalla
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Snapshot para evitar condiciones de carrera durante awaits
-      final s = ref.read(bleProvider);
+    // 1) Navegar cuando se conecta (listener REGISTRADO en build)
+    ref.listen(bleProvider, (prev, next) {
+      final was = prev?.connected ?? false;
+      if (next.connected && !was) {
+        if (!context.mounted) return;
+        context.go('/entrenamiento');
+      }
+    });
 
-      if (!s.connected && !s.scanning && !s.connecting) {
-        final ok = await pedirPermisos();
-        if (!ok) {
-          // ignore: use_build_context_synchronously
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Otorga permisos de Bluetooth')),
-          );
-          return;
-        }
+    // 2) Auto-conectar una sola vez sin usar BuildContext tras awaits
+    if (!ble.connected && !ble.scanning && !ble.connecting) {
+      Future.microtask(() async {
+        final snap = ref.read(bleProvider);
+        if (snap.connected || snap.scanning || snap.connecting) return;
+
+        final ok = await pedirPermisos(); // no usa context
+        if (!ok) return;
 
         await bleCtrl.scanAndConnect(
           scanTimeout: const Duration(seconds: 10),
           connectTimeout: const Duration(seconds: 10),
           namePrefix: "NeoRCP",
         );
-      }
-
-      // Cuando se conecta, navega directo a entrenamiento
-      
-      // ignore: use_build_context_synchronously
-      if (ref.read(bleProvider).connected && ModalRoute.of(context)?.isCurrent == true) {
-        
-        // ignore: use_build_context_synchronously
-        context.go('/entrenamiento');
-      }
-    });
+      });
+    }
 
     return Scaffold(
       backgroundColor: _bgColor,
@@ -85,17 +81,20 @@ class PreEntrenamientoScreen extends ConsumerWidget {
                       Row(
                         children: [
                           Icon(
-                            ble.connected ? Icons.bluetooth_connected : Icons.bluetooth,
-                            color: ble.connected ? Colors.teal : Colors.black45,
+                            ble.connected
+                                ? Icons.bluetooth_connected
+                                : Icons.bluetooth,
+                            color:
+                                ble.connected ? Colors.teal : Colors.black45,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               ble.connected ? 'Bluetooth listo' : 'Conectando…',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          // La animación SIEMPRE visible
                           const _PulseDot(),
                         ],
                       ),
@@ -114,7 +113,8 @@ class PreEntrenamientoScreen extends ConsumerWidget {
                       if (ble.connectTimedOut) ...[
                         const SizedBox(height: 10),
                         const _Hint(
-                          text: 'Activá Bluetooth y acercá el teléfono al dispositivo.',
+                          text:
+                              'Activá Bluetooth y acercá el teléfono al dispositivo.',
                           color: Colors.red,
                           icon: Icons.timer_off,
                         ),
@@ -133,13 +133,13 @@ class PreEntrenamientoScreen extends ConsumerWidget {
 }
 
 class _PulseDot extends StatefulWidget {
-  // ignore: unused_element_parameter
-  const _PulseDot({super.key});
+  const _PulseDot();
   @override
   State<_PulseDot> createState() => _PulseDotState();
 }
 
-class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _c;
   late final Animation<double> _scale;
   late final Animation<double> _opacity;
