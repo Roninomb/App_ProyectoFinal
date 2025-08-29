@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-// Providers
 import '../providers/ble_provider.dart';
 import '../providers/training_provider.dart';
 
@@ -18,6 +17,8 @@ class EntrenamientoScreen extends ConsumerStatefulWidget {
 class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
+  late final ProviderSubscription<BleState> _bleSub; // ✅ usando flutter_riverpod
+
   bool _started = false;
   String? _error;
 
@@ -25,7 +26,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   void initState() {
     super.initState();
 
-    // Animación tipo “respiración”
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -33,18 +33,21 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       upperBound: 1.08,
     )..repeat(reverse: true);
 
-    // Listener BLE -> actualiza trainingProvider y navega a /resultado
-    ref.listen(bleProvider, (prev, next) {
+    // Escucha manual del provider (válido fuera de build)
+    _bleSub = ref.listenManual<BleState>(bleProvider, (prev, next) {
       final msg = next.lastJson;
       if (msg == null || msg.isEmpty || prev?.lastJson == msg) return;
 
       try {
         final Map<String, dynamic> raw = json.decode(msg);
-        final Map<String, String> data = raw.map((k, v) => MapEntry(k, '$v'));
+        final data = raw.map((k, v) => MapEntry(k, '$v'));
+
         ref.read(trainingProvider.notifier).updateFromBle(data);
 
-        if (mounted) context.go('/resultado');
+        if (!mounted) return;
+        context.go('/resultado');
       } catch (_) {
+        if (!mounted) return;
         setState(() => _error = 'Datos finales inválidos (no es JSON)');
       }
     });
@@ -52,6 +55,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
 
   @override
   void dispose() {
+    _bleSub.close(); // 🔒 cerrar la suscripción
     _pulse.dispose();
     super.dispose();
   }
@@ -63,9 +67,8 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     });
 
     try {
-      // Envia START una sola vez
       await ref.read(bleProvider.notifier).startTrainingOnce();
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _started = false;
@@ -76,7 +79,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
 
   Future<void> _onCancelPressed() async {
     try {
-      // REEMPLAZO de stopAndDisconnect(): usa abortAll() o disconnect()
       await ref.read(bleProvider.notifier).abortAll();
     } finally {
       if (mounted) context.pop();
@@ -86,7 +88,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ble = ref.watch(bleProvider); // estado opcional para mostrar
+    final ble = ref.watch(bleProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -115,8 +117,8 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                       duration: const Duration(milliseconds: 300),
                       child: Text(
                         _started
-                            ? 'Realizá las compresiones según las indicaciones'
-                            : 'Cuando estés listo, presioná “Empezar',
+                            ? 'Realizá las compresiones según las indicaciones.\nAl finalizar, se procesarán los datos automáticamente.'
+                            : 'Cuando estés listo, presioná “Empezar”.\nEl dispositivo BLE ya debería estar conectado.',
                         key: ValueKey(_started),
                         style: theme.textTheme.bodyMedium,
                         textAlign: TextAlign.center,
@@ -145,7 +147,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                         height: 160,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          // withOpacity() -> withValues(alpha: …)
                           color: theme.colorScheme.primary.withValues(alpha: 0.10),
                           border: Border.all(
                             color: theme.colorScheme.primary.withValues(alpha: 0.35),
@@ -177,7 +178,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                               style: theme.textTheme.titleMedium,
                             ),
                             const SizedBox(height: 4),
-                            // Evita llaves innecesarias en la interpolación
                             Text(
                               '$ble',
                               style: theme.textTheme.labelSmall?.copyWith(
