@@ -17,10 +17,22 @@ class EntrenamientoScreen extends ConsumerStatefulWidget {
 class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
-  late final ProviderSubscription<BleState> _bleSub; // ✅ usando flutter_riverpod
+  late final ProviderSubscription<BleState> _bleSub;
 
   bool _started = false;
   String? _error;
+
+  bool _isFinalResult(String msg) {
+    try {
+      final obj = json.decode(msg);
+      return obj is Map<String, dynamic> &&
+          obj.containsKey('fuerza') &&
+          obj.containsKey('pulsos') &&
+          obj.containsKey('ritmo');
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
@@ -33,14 +45,18 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       upperBound: 1.08,
     )..repeat(reverse: true);
 
-    // Escucha manual del provider (válido fuera de build)
+    // Escucha manual del provider para poder usarlo fuera de build().
     _bleSub = ref.listenManual<BleState>(bleProvider, (prev, next) {
       final msg = next.lastJson;
       if (msg == null || msg.isEmpty || prev?.lastJson == msg) return;
 
+      // ⛔ Ignorar ACK y mensajes intermedios
+      if (!_isFinalResult(msg)) return;
+
       try {
         final Map<String, dynamic> raw = json.decode(msg);
-        final data = raw.map((k, v) => MapEntry(k, '$v'));
+        final Map<String, String> data =
+            raw.map((k, v) => MapEntry(k, '$v'));
 
         ref.read(trainingProvider.notifier).updateFromBle(data);
 
@@ -55,7 +71,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
 
   @override
   void dispose() {
-    _bleSub.close(); // 🔒 cerrar la suscripción
+    _bleSub.close();
     _pulse.dispose();
     super.dispose();
   }
@@ -67,6 +83,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     });
 
     try {
+      // Envía START (el provider ya manejará deduplicación/limpieza)
       await ref.read(bleProvider.notifier).startTrainingOnce();
     } catch (_) {
       if (!mounted) return;
@@ -88,7 +105,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ble = ref.watch(bleProvider);
+    final ble = ref.watch(bleProvider); // solo para mostrar estado
 
     return Scaffold(
       appBar: AppBar(
