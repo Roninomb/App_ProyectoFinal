@@ -209,6 +209,16 @@ class BleController extends StateNotifier<BleState> {
         switch (u.connectionState) {
           case DeviceConnectionState.connected:
             state = state.copyWith(connected: true, connecting: false);
+
+            // 👇 Ajustes de enlace ANTES de suscribirse (mejor MTU/latencia)
+            try { await _ble.requestMtu(deviceId: d.id, mtu: 185); } catch (_) {}
+            try {
+              await _ble.requestConnectionPriority(
+                deviceId: d.id,
+                priority: ConnectionPriority.highPerformance,
+              );
+            } catch (_) {}
+
             await subscribeResult(); // habilita CCCD y escucha resultados
             if (!completer.isCompleted) completer.complete();
             break;
@@ -274,7 +284,7 @@ class BleController extends StateNotifier<BleState> {
           final msg = _rxBuf.substring(0, nl).trim();
           _rxBuf = _rxBuf.substring(nl + 1);
           if (msg.isNotEmpty) {
-            // 👇 LOG CLAVE de cada paquete reensamblado (ACK / tick / final)
+            // 👇 LOG de cada paquete reensamblado (ACK / tick / final)
             // ignore: avoid_print
             print('[BLE][notify] $msg');
 
@@ -301,7 +311,7 @@ class BleController extends StateNotifier<BleState> {
 
     final bytes = utf8.encode(cmd.endsWith('\n') ? cmd : '$cmd\n');
     await _ble.writeCharacteristicWithResponse(c, value: bytes);
-    // Si tu característica soporta sin respuesta, podrías usar:
+    // Si tu característica soporta sin respuesta:
     // await _ble.writeCharacteristicWithoutResponse(c, value: bytes);
   }
 
@@ -349,7 +359,7 @@ class BleController extends StateNotifier<BleState> {
       connected: false,
       connectTimedOut: false,
       error: null,
-      lastJson: null, // ✅ limpiar residuos
+      lastJson: null,
     );
   }
 
@@ -368,7 +378,7 @@ class BleController extends StateNotifier<BleState> {
     state = state.copyWith(
       connected: false,
       connecting: false,
-      lastJson: null, // ✅ limpiar residuos
+      lastJson: null,
     );
   }
 
