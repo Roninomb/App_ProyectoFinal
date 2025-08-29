@@ -40,8 +40,10 @@ class PreEntrenamientoScreen extends ConsumerWidget {
 
       // Cuando se conecta, navega directo a entrenamiento
       
+      // ignore: use_build_context_synchronously
       if (ref.read(bleProvider).connected && ModalRoute.of(context)?.isCurrent == true) {
         
+        // ignore: use_build_context_synchronously
         context.go('/entrenamiento');
       }
     });

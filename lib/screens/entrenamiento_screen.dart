@@ -1,231 +1,237 @@
-import 'dart:async';
+// lib/screens/entrenamiento_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+// Providers
 import '../providers/ble_provider.dart';
-import '../providers/user_provider.dart';
+import '../providers/training_provider.dart';
 
 class EntrenamientoScreen extends ConsumerStatefulWidget {
   const EntrenamientoScreen({super.key});
 
   @override
- createState() => _EntrenamientoScreenState();
+  ConsumerState<EntrenamientoScreen> createState() => _EntrenamientoScreenState();
 }
 
 class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
-    with TickerProviderStateMixin {
-  static const _bgColor = Color(0xFFEFF7FD);
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  bool _started = false;
+  String? _error;
 
-  bool _empezado = false;
-  Timer? _antiSpam; // evita toques repetidos
+  @override
+  void initState() {
+    super.initState();
+
+    // Animación tipo “respiración”
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+      lowerBound: 0.92,
+      upperBound: 1.08,
+    )..repeat(reverse: true);
+
+    // Listener BLE -> actualiza trainingProvider y navega a /resultado
+    ref.listen(bleProvider, (prev, next) {
+      final msg = next.lastJson;
+      if (msg == null || msg.isEmpty || prev?.lastJson == msg) return;
+
+      try {
+        final Map<String, dynamic> raw = json.decode(msg);
+        final Map<String, String> data = raw.map((k, v) => MapEntry(k, '$v'));
+        ref.read(trainingProvider.notifier).updateFromBle(data);
+
+        if (mounted) context.go('/resultado');
+      } catch (_) {
+        setState(() => _error = 'Datos finales inválidos (no es JSON)');
+      }
+    });
+  }
 
   @override
   void dispose() {
-    _antiSpam?.cancel();
+    _pulse.dispose();
     super.dispose();
+  }
+
+  Future<void> _onStartPressed() async {
+    setState(() {
+      _started = true;
+      _error = null;
+    });
+
+    try {
+      // Envia START una sola vez
+      await ref.read(bleProvider.notifier).startTrainingOnce();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _started = false;
+        _error = 'No se pudo iniciar el entrenamiento';
+      });
+    }
+  }
+
+  Future<void> _onCancelPressed() async {
+    try {
+      // REEMPLAZO de stopAndDisconnect(): usa abortAll() o disconnect()
+      await ref.read(bleProvider.notifier).abortAll();
+    } finally {
+      if (mounted) context.pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bleCtrl = ref.read(bleProvider.notifier);
-    final nombre = ref.watch(nombreProvider);
+    final theme = Theme.of(context);
+    final ble = ref.watch(bleProvider); // estado opcional para mostrar
 
     return Scaffold(
-      backgroundColor: _bgColor,
       appBar: AppBar(
-        elevation: 0,
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.black87,
         title: const Text('Entrenamiento'),
         centerTitle: true,
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+      body: SafeArea(
+        child: Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            padding: const EdgeInsets.all(20),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Hola, $nombre',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // ---- Card principal de ENTRENAMIENTO (solo animación) ----
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x1A000000),
-                        blurRadius: 16,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.heat_pump_rounded, color: Color.fromARGB(115, 240, 53, 53)),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Listo para comenzar',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 180,
-                        child: Center(
-                          child: _empezado
-                              ? const _PulseRings()   // animación en vivo
-                              : const _StandbyHint(), // texto sutil antes de empezar
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // ---- Botón Acción ----
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _empezado
-                        ? null
-                        : () async {
-                            _antiSpam?.cancel();
-                            _antiSpam = Timer(const Duration(seconds: 1), () {});
-                            await bleCtrl.startTrainingOnce(); // envía START\n una sola vez
-                            if (!mounted) return;
-                            setState(() => _empezado = true);
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFF26464),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      textStyle: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 16,
+                // Encabezado
+                Column(
+                  children: [
+                    Text(
+                      _started ? 'En progreso…' : 'Listo para comenzar',
+                      style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: Text(
+                        _started
+                            ? 'Realizá las compresiones según las indicaciones'
+                            : 'Cuando estés listo, presioná “Empezar',
+                        key: ValueKey(_started),
+                        style: theme.textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                    child: const Text('Comenzar entrenamiento'),
-                  ),
+                    const SizedBox(height: 12),
+                    if (_error != null)
+                      Text(
+                        _error!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                  ],
+                ),
+
+                // Animación “respiración” + indicador
+                AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, _) {
+                    return Transform.scale(
+                      scale: _pulse.value,
+                      child: Container(
+                        width: 160,
+                        height: 160,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          // withOpacity() -> withValues(alpha: …)
+                          color: theme.colorScheme.primary.withValues(alpha: 0.10),
+                          border: Border.all(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                            width: 3,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 8),
+                            _started
+                                ? const Padding(
+                                    padding: EdgeInsets.only(top: 6),
+                                    child: SizedBox(
+                                      width: 28,
+                                      height: 28,
+                                      child: CircularProgressIndicator(strokeWidth: 3),
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.play_arrow_rounded,
+                                    size: 48,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _started ? 'Esperando datos…' : 'Listo',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            // Evita llaves innecesarias en la interpolación
+                            Text(
+                              '$ble',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // Botonera
+                Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _started ? null : _onStartPressed,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: Text(
+                            _started ? 'En progreso…' : 'Empezar',
+                            key: ValueKey(_started),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: theme.colorScheme.onPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextButton(
+                      onPressed: _onCancelPressed,
+                      child: const Text('Cancelar'),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _StandbyHint extends StatelessWidget {
-  const _StandbyHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Text(
-      'Presioná "Comenzar entrenamiento".',
-      style: TextStyle(color: Colors.black54),
-      textAlign: TextAlign.center,
-    );
-  }
-}
-
-/// Animación de pulsos concéntricos
-class _PulseRings extends StatefulWidget {
-  // ignore: unused_element_parameter
-  const _PulseRings({super.key});
-  @override
-  State<_PulseRings> createState() => _PulseRingsState();
-}
-
-class _PulseRingsState extends State<_PulseRings>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))
-        ..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 140,
-      height: 140,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          for (int i = 0; i < 3; i++) _Ring(anim: _c, delay: i * 0.2),
-          Container(
-            width: 18,
-            height: 18,
-            decoration: const BoxDecoration(
-              color: Colors.teal,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Ring extends StatelessWidget {
-  final Animation<double> anim;
-  final double delay;
-  const _Ring({required this.anim, required this.delay});
-
-  @override
-  Widget build(BuildContext context) {
-    final curved = CurvedAnimation(
-      parent: anim,
-      curve: Interval(delay, (delay + 0.8).clamp(0, 1.0), curve: Curves.easeOut),
-    );
-    return AnimatedBuilder(
-      animation: curved,
-      builder: (_, __) {
-        final v = curved.value; // 0..1
-        final scale = 0.6 + 0.6 * v; // 0.6 → 1.2
-        final opacity = 1.0 - v;     // 1 → 0
-        return Opacity(
-          opacity: opacity,
-          child: Transform.scale(
-            scale: scale,
-            child: Container(
-              width: 110,
-              height: 110,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.teal, width: 2),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
