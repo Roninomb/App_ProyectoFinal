@@ -125,7 +125,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onPressed: camposValidos
                             ? () {
                                 
-                                context.pushNamed('pretrain');
+                                context.push('pretrain');
                               }
                             : null,
                         style: ElevatedButton.styleFrom(

@@ -53,8 +53,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
 
       try {
         final Map<String, dynamic> raw = json.decode(msg);
-        final Map<String, String> data =
-            raw.map((k, v) => MapEntry(k, '$v'));
+        final Map<String, String> data = raw.map((k, v) => MapEntry(k, '$v'));
         // Guarda en el provider de resultados (si ya lo usás en ResultadoScreen).
         ref.read(trainingProvider.notifier).updateFromBle(data);
       } catch (_) {
@@ -63,7 +62,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       }
 
       if (!mounted) return;
-      context.go('/resultado');
+      context.push('/resultado');
     });
   }
 
@@ -173,6 +172,8 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const SizedBox(height: 8),
+                            // Antes: Icon(Icons.play_arrow_rounded, ...)
+                            // Ahora: sin icono; dejamos un espacio para mantener el layout
                             _started
                                 ? const Padding(
                                     padding: EdgeInsets.only(top: 6),
@@ -182,11 +183,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                                       child: CircularProgressIndicator(strokeWidth: 3),
                                     ),
                                   )
-                                : Icon(
-                                    Icons.play_arrow_rounded,
-                                    size: 48,
-                                    color: theme.colorScheme.primary,
-                                  ),
+                                : const SizedBox(width: 28, height: 28),
                             const SizedBox(height: 10),
                             Text(
                               _started ? 'Esperando datos…' : 'Listo',

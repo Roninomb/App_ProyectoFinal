@@ -23,7 +23,7 @@ class PreEntrenamientoScreen extends ConsumerWidget {
       final was = prev?.connected ?? false;
       if (next.connected && !was) {
         if (!context.mounted) return;
-        context.go('/entrenamiento');
+        context.push('/entrenamiento');
       }
     });
 
