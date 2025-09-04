@@ -22,13 +22,16 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   bool _started = false;
   String? _error;
 
+  // Acepta ambos formatos:
+  // - Nuevo: fuerza, pulsos, total
+  // - Viejo (compat): fuerza, pulsos, ritmo
   bool _isFinalResult(String msg) {
     try {
       final obj = json.decode(msg);
-      return obj is Map<String, dynamic> &&
-          obj.containsKey('fuerza') &&
-          obj.containsKey('pulsos') &&
-          obj.containsKey('ritmo');
+      if (obj is! Map<String, dynamic>) return false;
+      final hasNew = obj.containsKey('fuerza') && obj.containsKey('pulsos') && obj.containsKey('total');
+      final hasOld = obj.containsKey('fuerza') && obj.containsKey('pulsos') && obj.containsKey('ritmo');
+      return hasNew || hasOld;
     } catch (_) {
       return false;
     }
@@ -54,7 +57,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       try {
         final Map<String, dynamic> raw = json.decode(msg);
         final Map<String, String> data = raw.map((k, v) => MapEntry(k, '$v'));
-        // Guarda en el provider de resultados (si ya lo usás en ResultadoScreen).
+        // Actualiza el provider de resultados (ResultadoScreen lo leerá).
         ref.read(trainingProvider.notifier).updateFromBle(data);
       } catch (_) {
         // si viene malformado, no navegamos
@@ -62,7 +65,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       }
 
       if (!mounted) return;
-      context.push('/resultado');
+      context.go('/resultado');
     });
   }
 
@@ -172,8 +175,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const SizedBox(height: 8),
-                            // Antes: Icon(Icons.play_arrow_rounded, ...)
-                            // Ahora: sin icono; dejamos un espacio para mantener el layout
+                            // Sin botón play (mantiene layout)
                             _started
                                 ? const Padding(
                                     padding: EdgeInsets.only(top: 6),
@@ -197,16 +199,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                               ),
                               textAlign: TextAlign.center,
                             ),
-
-                            // ▼ DEBUG opcional: ver el último mensaje BLE recibido
-                            // const SizedBox(height: 6),
-                            // Text(
-                            //   ref.watch(bleProvider).lastJson ?? '—',
-                            //   style: theme.textTheme.labelSmall,
-                            //   textAlign: TextAlign.center,
-                            //   maxLines: 2,
-                            //   overflow: TextOverflow.ellipsis,
-                            // ),
                           ],
                         ),
                       ),
