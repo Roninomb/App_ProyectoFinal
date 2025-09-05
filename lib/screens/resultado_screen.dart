@@ -89,12 +89,12 @@ class ResultadoScreen extends ConsumerWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Fuerza efectiva: ${fmtPct(training.fuerza)} %'),
+                    Text('💪 Fuerza efectiva: ${fmtPct(training.fuerza)} %'),
                     const SizedBox(height: 8),
-                    Text('Pulsos efectivos: ${fmtPct(training.pulsos)} %'),
+                    Text('❤️ Pulsos efectivos: ${fmtPct(training.pulsos)} %'),
                     const SizedBox(height: 8),
                     if (training.total != null)
-                      Text('Compresiones totales: ${training.total}')
+                      Text('🧠 Compresiones totales: ${training.total}')
                     else
                       Text('Ritmo: ${training.ritmo ?? '-'}'),
                   ],
