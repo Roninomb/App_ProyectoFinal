@@ -134,7 +134,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                       duration: const Duration(milliseconds: 300),
                       child: Text(
                         _started
-                            ? 'Realizá las compresiones. Al finalizar se procesan los datos automáticamente.'
+                            ? 'Realizá las compresiones.'
                             : 'Cuando estés listo, presioná “Empezar”.',
                         key: ValueKey(_started),
                         style: theme.textTheme.bodyMedium,
@@ -188,7 +188,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                                 : const SizedBox(width: 28, height: 28),
                             const SizedBox(height: 10),
                             Text(
-                              _started ? 'Esperando datos…' : 'Listo',
+                              _started ? 'Esperando datos…' : '',
                               style: theme.textTheme.titleMedium,
                             ),
                             const SizedBox(height: 4),
@@ -225,7 +225,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                             _started ? 'En progreso…' : 'Empezar',
                             key: ValueKey(_started),
                             style: theme.textTheme.titleMedium?.copyWith(
-                              color: theme.colorScheme.onPrimary,
+                              color: const Color(0xFFF26464),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
