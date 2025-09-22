@@ -1,4 +1,3 @@
-// lib/providers/ble_provider.dart
 import 'dart:async';
 import 'dart:convert';
 
@@ -20,7 +19,7 @@ class BleState {
   final bool connecting;
   final bool connected;
   final DiscoveredDevice? device;
-  final String? lastJson;   // JSON reensamblado por '\n'
+  final String? lastJson;   // JSON o línea LIVE reensamblada por '\n'
   final String? error;
   final bool connectTimedOut;
 
@@ -210,7 +209,7 @@ class BleController extends StateNotifier<BleState> {
           case DeviceConnectionState.connected:
             state = state.copyWith(connected: true, connecting: false);
 
-            // 👇 Ajustes de enlace ANTES de suscribirse (mejor MTU/latencia)
+            // Ajustes de enlace
             try { await _ble.requestMtu(deviceId: d.id, mtu: 185); } catch (_) {}
             try {
               await _ble.requestConnectionPriority(
@@ -284,10 +283,8 @@ class BleController extends StateNotifier<BleState> {
           final msg = _rxBuf.substring(0, nl).trim();
           _rxBuf = _rxBuf.substring(nl + 1);
           if (msg.isNotEmpty) {
-            // 👇 LOG de cada paquete reensamblado (ACK / tick / final)
             // ignore: avoid_print
             print('[BLE][notify] $msg');
-
             state = state.copyWith(lastJson: msg);
           }
         }
@@ -311,15 +308,13 @@ class BleController extends StateNotifier<BleState> {
 
     final bytes = utf8.encode(cmd.endsWith('\n') ? cmd : '$cmd\n');
     await _ble.writeCharacteristicWithResponse(c, value: bytes);
-    // Si tu característica soporta sin respuesta:
-    // await _ble.writeCharacteristicWithoutResponse(c, value: bytes);
   }
 
   Future<void> startTraining() => sendCommand('START');
 
   /// Envía START una sola vez por sesión y limpia resultados previos.
   Future<void> startTrainingOnce() {
-    clearLastJson(); // ✅ evita navegar por ACK/JSON viejo
+    clearLastJson(); // evita navegar por ACK/JSON viejo
     if (_startSent) return Future.value();
     if (_startInFlight != null) return _startInFlight!;
     return _startInFlight = startTraining().whenComplete(() {

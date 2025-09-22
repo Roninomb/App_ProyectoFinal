@@ -22,9 +22,15 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
   bool _started = false;
   String? _error;
 
-  // Acepta ambos formatos:
-  // - Nuevo: fuerza, pulsos, total
-  // - Viejo (compat): fuerza, pulsos, ritmo
+  // Tiempo real (LIVE)
+  int? _liveForceOk;     // 0/1
+  int? _liveRhythmCat;   // 1 lento, 2 rápido, 3 correcto
+  DateTime? _startAt;
+
+  void _markStartIfNeeded() {
+    _startAt ??= DateTime.now();
+  }
+
   bool _isFinalResult(String msg) {
     try {
       final obj = json.decode(msg);
@@ -48,19 +54,36 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
       upperBound: 1.08,
     )..repeat(reverse: true);
 
-    // Escucha BLE fuera de build() sin violar reglas de Riverpod.
+    // Listener BLE: LIVE(fuerza, ritmo) para tiempo real; JSON final para navegar
     _bleSub = ref.listenManual<BleState>(bleProvider, (prev, next) {
       final msg = next.lastJson;
       if (msg == null || msg.isEmpty || prev?.lastJson == msg) return;
-      if (!_isFinalResult(msg)) return; // ignorar ACK/ticks/otros
+
+      // 1) Tiempo real: "LIVE,<forceOk>,<rhythmCat>"
+      if (msg.startsWith('LIVE,')) {
+        final parts = msg.split(',');
+        if (parts.length >= 3) {
+          final f = int.tryParse(parts[1]); // 0/1
+          final r = int.tryParse(parts[2]); // 1/2/3
+          if (f != null && (f == 0 || f == 1) && r != null && r >= 1 && r <= 3) {
+            setState(() {
+              _markStartIfNeeded();
+              _liveForceOk = f;
+              _liveRhythmCat = r;
+            });
+          }
+        }
+        return; // no navegamos con LIVE
+      }
+
+      // 2) Resultado final (JSON)
+      if (!_isFinalResult(msg)) return;
 
       try {
         final Map<String, dynamic> raw = json.decode(msg);
         final Map<String, String> data = raw.map((k, v) => MapEntry(k, '$v'));
-        // Actualiza el provider de resultados (ResultadoScreen lo leerá).
         ref.read(trainingProvider.notifier).updateFromBle(data);
       } catch (_) {
-        // si viene malformado, no navegamos
         return;
       }
 
@@ -80,10 +103,12 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     setState(() {
       _started = true;
       _error = null;
+      _liveForceOk = null;
+      _liveRhythmCat = null;
+      _startAt = null;
     });
 
     try {
-      // El provider limpia lastJson y deduplica START.
       await ref.read(bleProvider.notifier).startTrainingOnce();
     } catch (_) {
       if (!mounted) return;
@@ -102,10 +127,75 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
     }
   }
 
+  Widget _forceCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final ok = _liveForceOk == 1;
+    final Color base =
+        _liveForceOk == null ? theme.colorScheme.surfaceContainerHighest : (ok ? Colors.green : Colors.red);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+      decoration: BoxDecoration(
+        color: base.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: base.withValues(alpha: 0.6), width: 2),
+      ),
+      child: Text(
+        _liveForceOk == null
+            ? 'Fuerza: —'
+            : (ok ? 'Fuerza: CORRECTA' : 'Fuerza: INCORRECTA'),
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: _liveForceOk == null ? theme.colorScheme.onSurface : Colors.black,
+        ),
+      ),
+    );
+  }
+
+  Widget _rhythmCard(BuildContext context) {
+    final theme = Theme.of(context);
+    late Color base;
+    late String text;
+    switch (_liveRhythmCat) {
+      case 1: base = Colors.orange; text = 'Ritmo: Muy lento'; break;
+      case 2: base = Colors.red;    text = 'Ritmo: Muy rápido'; break;
+      case 3: base = Colors.green;  text = 'Ritmo: Correcto';   break;
+      default:
+        base = theme.colorScheme.surfaceContainerHighest;
+        text = 'Ritmo: —';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+      decoration: BoxDecoration(
+        color: base.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: base.withValues(alpha: 0.6), width: 2),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: _liveRhythmCat == null ? theme.colorScheme.onSurface : Colors.black,
+        ),
+      ),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ble = ref.watch(bleProvider); // para mostrar estado
+    final connected = ref.watch(bleProvider.select((s) => s.connected));
 
     return Scaffold(
       appBar: AppBar(
@@ -153,7 +243,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                   ],
                 ),
 
-                // Animación “respiración” + estado
+                // “Respiración” + estado BLE
                 AnimatedBuilder(
                   animation: _pulse,
                   builder: (context, _) {
@@ -175,7 +265,6 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const SizedBox(height: 8),
-                            // Sin botón play (mantiene layout)
                             _started
                                 ? const Padding(
                                     padding: EdgeInsets.only(top: 6),
@@ -193,7 +282,7 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              ble.connected ? 'Bluetooth listo' : 'Conectando…',
+                              connected ? 'Bluetooth listo' : 'Conectando…',
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
@@ -204,6 +293,23 @@ class _EntrenamientoScreenState extends ConsumerState<EntrenamientoScreen>
                       ),
                     );
                   },
+                ),
+
+                // Tarjetas en tiempo real
+                Column(
+                  children: [
+                    _forceCard(context),
+                    const SizedBox(height: 12),
+                    _rhythmCard(context),
+                    const SizedBox(height: 6),
+                    Text(
+                      _startAt == null
+                          ? 'Tiempo: 00:00'
+                          : 'Tiempo: ${_fmt(DateTime.now().difference(_startAt!))}',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                    ),
+                  ],
                 ),
 
                 // Botonera

@@ -1,4 +1,3 @@
-// lib/screens/resultado_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/user_provider.dart';
@@ -25,21 +24,16 @@ class ResultadoScreen extends ConsumerWidget {
       }
 
       try {
-        // Compat: si hay total (nuevo firmware), lo mandamos.
-        // Si no, mantenemos el campo ritmo (viejo firmware).
         await enviarReportePorEmail(
           nombre: nombre,
           email: email,
           fuerza: training.fuerza?.toString() ?? '',
           pulsos: training.pulsos?.toString() ?? '',
-          // Si tu template ya fue actualizado para usar "total", agregá ese parámetro en email_service.dart.
-          // Mientras tanto, mantenemos "ritmo" para no romper compatibilidad.
+          // Compat: mientras el template use "ritmo", enviamos total como ritmo si existe
           ritmo: training.total != null
               ? '${training.total}'
               : (training.ritmo?.toString() ?? ''),
-          // Si ACTUALIZASTE email_service.dart para aceptar 'total', descomenta la línea de abajo
-          // y elimina el uso sobrecargado de 'ritmo' de arriba.
-          // total: training.total?.toString() ?? 'N/D',
+          // Si actualizás el email_service.dart para aceptar 'total', podés usar eso en su lugar.
         );
 
         if (!context.mounted) return;
@@ -85,7 +79,7 @@ class ResultadoScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // Métricas (compat: muestra total si viene; si no, muestra ritmo)
+                // Métricas (compat: muestra total si viene; si no, muestra ritmo bool)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
