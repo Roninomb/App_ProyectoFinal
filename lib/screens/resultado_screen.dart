@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../providers/user_provider.dart';
-import '../providers/training_provider.dart'; // Provider central
+import '../providers/training_provider.dart';
 import '../services/email_service.dart';
 
 class ResultadoScreen extends ConsumerWidget {
@@ -11,7 +12,7 @@ class ResultadoScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nombre = ref.watch(nombreProvider);
     final email = ref.watch(emailProvider);
-    final training = ref.watch(trainingProvider); // fuerza%, pulsos%, total?/ritmo?
+    final training = ref.watch(trainingProvider);
 
     String fmtPct(num? v) => (v == null) ? '-' : v.toString();
 
@@ -29,11 +30,9 @@ class ResultadoScreen extends ConsumerWidget {
           email: email,
           fuerza: training.fuerza?.toString() ?? '',
           pulsos: training.pulsos?.toString() ?? '',
-          // Compat: mientras el template use "ritmo", enviamos total como ritmo si existe
           ritmo: training.total != null
               ? '${training.total}'
               : (training.ritmo?.toString() ?? ''),
-          // Si actualizás el email_service.dart para aceptar 'total', podés usar eso en su lugar.
         );
 
         if (!context.mounted) return;
@@ -46,6 +45,13 @@ class ResultadoScreen extends ConsumerWidget {
           SnackBar(content: Text('Error al enviar email: $e')),
         );
       }
+    }
+
+    void volverAlInicio() {
+      // Limpia el estado del entrenamiento
+      ref.read(trainingProvider.notifier).reset();
+      // Navega al home
+      context.go('/');
     }
 
     return Scaffold(
@@ -79,7 +85,7 @@ class ResultadoScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // Métricas (compat: muestra total si viene; si no, muestra ritmo bool)
+                // Métricas
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -96,6 +102,7 @@ class ResultadoScreen extends ConsumerWidget {
 
                 const SizedBox(height: 32),
 
+                // Botón de enviar email
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -111,6 +118,30 @@ class ResultadoScreen extends ConsumerWidget {
                     child: const Text(
                       'Enviar reporte por email',
                       style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 🏠 Botón para volver al inicio y resetear provider
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: volverAlInicio,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.blueAccent),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Reiniciar entrenamiento',
+                      style: TextStyle(
+                        color: Colors.blueAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
