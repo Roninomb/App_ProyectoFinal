@@ -19,7 +19,7 @@ class BleState {
   final bool connecting;
   final bool connected;
   final DiscoveredDevice? device;
-  final String? lastJson;   // JSON o línea LIVE reensamblada por '\n'
+  final String? lastJson;   // JSON in
   final String? error;
   final bool connectTimedOut;
 
@@ -67,10 +67,10 @@ class BleController extends StateNotifier<BleState> {
   StreamSubscription<ConnectionStateUpdate>? _connSub;
   StreamSubscription<List<int>>? _notifySub;
 
-  // Buffer para reensamblar por '\n'
+  // '\n'
   String _rxBuf = '';
 
-  // Deduplicación de START
+
   bool _startSent = false;
   Future<void>? _startInFlight;
 
@@ -127,7 +127,7 @@ class BleController extends StateNotifier<BleState> {
     }
   }
 
-  // ---------- API pública ----------
+  
   void clearLastJson() => state = state.copyWith(lastJson: null, error: null);
 
   // ---------- Escaneo ----------
@@ -181,7 +181,7 @@ class BleController extends StateNotifier<BleState> {
     await found.future;
   }
 
-  // ---------- Conexión ----------
+  
   Future<void> connectWithTimeout({
     Duration timeout = const Duration(seconds: 30),
   }) async {
@@ -218,7 +218,7 @@ class BleController extends StateNotifier<BleState> {
               );
             } catch (_) {}
 
-            await subscribeResult(); // habilita CCCD y escucha resultados
+            await subscribeResult(); 
             if (!completer.isCompleted) completer.complete();
             break;
           case DeviceConnectionState.disconnected:

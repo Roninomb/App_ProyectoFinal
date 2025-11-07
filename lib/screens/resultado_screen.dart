@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/user_provider.dart';
 import '../providers/training_provider.dart';
 import '../services/email_service.dart';
+import '../providers/ble_provider.dart'; // 👈 importa el BLE
 
 class ResultadoScreen extends ConsumerWidget {
   const ResultadoScreen({super.key});
@@ -15,6 +16,11 @@ class ResultadoScreen extends ConsumerWidget {
     final training = ref.watch(trainingProvider);
 
     String fmtPct(num? v) => (v == null) ? '-' : v.toString();
+
+    // Nota global simple (promedio fuerza & pulsos)
+    final fuerza = training.fuerza ?? 0;
+    final pulsos = (training.pulsos ?? 0).toDouble();
+    final notaGlobal = (fuerza + pulsos) / 2;
 
     Future<void> enviarEmail() async {
       if (email.trim().isEmpty || nombre.trim().isEmpty) {
@@ -47,11 +53,20 @@ class ResultadoScreen extends ConsumerWidget {
       }
     }
 
-    void volverAlInicio() {
-      // Limpia el estado del entrenamiento
+    Future<void> volverAlInicio() async {
+      try {
+        // 1) cortar BLE (scan, conexión y notifs) y limpiar flags internos
+        await ref.read(bleProvider.notifier).abortAll();
+      } catch (e) {
+        // opcional: loguear o mostrar algo si querés
+        // debugPrint('Error abortAll BLE: $e');
+      }
+
+      // 2) limpiar métricas de entrenamiento
       ref.read(trainingProvider.notifier).reset();
-      // Navega al home
-      context.go('/');
+
+      // 3) navegar a Home
+      if (context.mounted) context.go('/');
     }
 
     return Scaffold(
@@ -97,6 +112,14 @@ class ResultadoScreen extends ConsumerWidget {
                       Text('🧠 Compresiones totales: ${training.total}')
                     else
                       Text('Ritmo: ${training.ritmo ?? '-'}'),
+                    const SizedBox(height: 12),
+                    Text(
+                      '⭐ Nota global: ${notaGlobal.toStringAsFixed(1)} / 100',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
                   ],
                 ),
 
@@ -124,11 +147,11 @@ class ResultadoScreen extends ConsumerWidget {
 
                 const SizedBox(height: 16),
 
-                // 🏠 Botón para volver al inicio y resetear provider
+                // 🏠 Botón: corta BLE + resetea entrenamiento + vuelve al inicio
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: volverAlInicio,
+                    onPressed: () => volverAlInicio(),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       side: const BorderSide(color: Colors.blueAccent),
@@ -137,7 +160,7 @@ class ResultadoScreen extends ConsumerWidget {
                       ),
                     ),
                     child: const Text(
-                      'Reiniciar entrenamiento',
+                      'Volver al inicio',
                       style: TextStyle(
                         color: Colors.blueAccent,
                         fontWeight: FontWeight.bold,
