@@ -32,7 +32,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Observa el estado para habilitar/deshabilitar el botón
+    
     final nombre = ref.watch(nombreProvider);
     final email  = ref.watch(emailProvider);
     final camposValidos = nombre.trim().isNotEmpty && email.trim().isNotEmpty;

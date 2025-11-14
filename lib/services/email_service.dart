@@ -7,6 +7,7 @@ Future<void> enviarReportePorEmail({
   required String email,
   required String fuerza,
   required String pulsos,
+  required String notaglobal,
   String? ritmo, // compatibilidad con firmware viejo
   String? total, // soporte para firmware nuevo
 }) async {
@@ -22,6 +23,8 @@ Future<void> enviarReportePorEmail({
     'nombre': nombre,
     'fuerza': fuerza,
     'pulsos': pulsos,
+    'notaglobal': notaglobal,
+  
   };
 
   if (total != null && total.isNotEmpty) {

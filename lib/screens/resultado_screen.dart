@@ -21,7 +21,7 @@ class ResultadoScreen extends ConsumerWidget {
     final fuerza = training.fuerza ?? 0;
     final pulsos = (training.pulsos ?? 0).toDouble();
     final notaGlobal = (fuerza + pulsos) / 2;
-
+    
     Future<void> enviarEmail() async {
       if (email.trim().isEmpty || nombre.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -33,7 +33,8 @@ class ResultadoScreen extends ConsumerWidget {
       try {
         await enviarReportePorEmail(
           nombre: nombre,
-          email: email,
+          email: email, 
+          notaglobal: notaGlobal.toStringAsFixed(1),
           fuerza: training.fuerza?.toString() ?? '',
           pulsos: training.pulsos?.toString() ?? '',
           ritmo: training.total != null
