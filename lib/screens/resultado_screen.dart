@@ -112,13 +112,10 @@ class ResultadoScreen extends ConsumerWidget {
                       Text('🧠 Compresiones totales: ${training.total}')
                     else
                       Text('Ritmo: ${training.ritmo ?? '-'}'),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Text(
                       '⭐ Nota global: ${notaGlobal.toStringAsFixed(1)} / 100',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
+                      
                     ),
                   ],
                 ),
@@ -147,7 +144,7 @@ class ResultadoScreen extends ConsumerWidget {
 
                 const SizedBox(height: 16),
 
-                // 🏠 Botón: corta BLE + resetea entrenamiento + vuelve al inicio
+                // sumado el abort all para cortar las notis  y desuscribe
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
